@@ -1,2 +1,28 @@
 Project.pdf
 ProjectRestrictions.txt
+impl_plan.md
+.vscode/
+.vs/
+
+# Build output
+build/
+out/
+bin/
+*.obj
+*.ilk
+*.pdb
+*.exe
+*.lib
+*.exp
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+Makefile
+
+# Experiment output (generated, not hand-authored)
+results/raw/
+results/summary/
