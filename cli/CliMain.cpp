@@ -1,9 +1,8 @@
 // smartrace_cli: headless driver and API usage sample.
 //
-// Phase 1 demo: loads each of the 3 real circuits, runs the Track Explorer
-// queries, and plans the full lap (through every mandatory checkpoint, in
-// order, to the finish) with both Dijkstra and A*, printing their costs
-// side by side to show they agree.
+// Phase 2 demo: after the Phase 1 route-planning printout, runs a full
+// deterministic race on the first circuit (1 human on autopilot + 3
+// opponents) to completion, printing the event log and final standings.
 #include "../src/api/SmartRaceApi.h"
 
 #include <cstdio>
@@ -32,6 +31,17 @@ namespace
         printf("    %-10s cost=%7.3f  dist=%7.1f  time=%6.2fs  fuel=%6.2f  (%d vertices)\n",
             label, route.totalCost, route.totalDistance, route.totalTime, route.totalFuel,
             route.vertexPath.count);
+    }
+
+    const char* StatusName(int status)
+    {
+        switch (status)
+        {
+            case 0: return "Finished";
+            case 1: return "DNF";
+            case 2: return "TimeLimit";
+            default: return "?";
+        }
     }
 }
 
@@ -95,28 +105,47 @@ int main()
         printf("\n");
     }
 
-    printf("================================================================\n");
-    printf("Stub race (loaded circuit's MAINROUTE, 10 simulated seconds)...\n");
-    ApiLoadCircuit(0);
-    status = ApiRaceStart();
-    if (status == ApiStatus::Ok)
+    for (int c = 0; c < circuitCount; ++c)
     {
-        for (int step = 0; step < 10; ++step)
+        printf("================================================================\n");
+        printf("Full race on circuit %d, %s (1 human autopilot + 3 opponents)...\n\n", c, ApiCircuitName(c));
+
+        ApiLoadCircuit(c);
+        status = ApiRaceStart();
+        if (status != ApiStatus::Ok)
         {
-            ApiRaceStep(50);   // 50 * 20ms = 1 simulated second
-            RaceSnapshot snap = ApiRaceSnapshot();
-            printf("  t=%5dms ", snap.timeMs);
-            for (int i = 0; i < snap.racers.count; ++i)
-            {
-                const RacerView& r = snap.racers[i];
-                printf("| %-8s (%6.1f,%6.1f) ", r.name, r.x, r.y);
-            }
-            printf("\n");
+            printf("ApiRaceStart failed: %s\n", ApiLastError());
+            continue;
         }
-    }
-    else
-    {
-        printf("  ApiRaceStart failed: %s\n", ApiLastError());
+
+        int lastLogIndex = -1;
+        int ticks = 0;
+        const int kMaxTicks = 20 * 60 * 60 * 50;   // generous cap
+        while (!ApiRaceOver() && ticks < kMaxTicks)
+        {
+            ApiRaceStep(1);
+            ++ticks;
+
+            LogView log = ApiRaceLogSince(lastLogIndex);
+            for (int i = 0; i < log.lines.count; ++i)
+            {
+                printf("  [t=%6dms] %s\n", log.lines[i].timeMs, log.lines[i].text);
+                lastLogIndex = log.lines[i].index;
+            }
+        }
+
+        printf("\nRace over at t=%dms after %d ticks.\n\n", ApiRaceSnapshot().timeMs, ticks);
+
+        printf("Final standings:\n");
+        ResultsView results = ApiRaceResults();
+        for (int i = 0; i < results.rows.count; ++i)
+        {
+            const ResultRowView& r = results.rows[i];
+            printf("  P%-2d racer=%-2d status=%-10s finishTime=%6dms bestLap=%6dms points=%2d (+%d bonus)\n",
+                r.finishPosition, r.racerId, StatusName(r.status), r.finishTimeMs,
+                (r.bestLapTimeMs >= 0x7fffffff) ? -1 : r.bestLapTimeMs, r.pointsAwarded, r.bonusPoints);
+        }
+        printf("\n");
     }
 
     ApiShutdown();

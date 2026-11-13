@@ -1,12 +1,9 @@
 // SmartRace backend API implementation.
 //
-// Session/Main Menu, static track data and the Track Explorer queries are
-// REAL as of Phase 1 (TrackLoader + Graph + BFS/DFS/Dijkstra/A*/
-// RoutePlanner). Racing (ApiRaceStart/Step/Snapshot) is still a stub: it
-// drives a handful of fake racers along the loaded circuit's real MAINROUTE
-// (so at least they move over real track geometry), not a real simulation.
-// The real deterministic RaceEngine replaces that part in Phase 2 without
-// changing these signatures.
+// Session/Main Menu, static track data, the Track Explorer queries and
+// racing are all real as of Phase 2 (TrackLoader + Graph + BFS/DFS/
+// Dijkstra/A*/RoutePlanner + the deterministic RaceEngine). Resource
+// planning, championship and the Algorithm Lab are still to come.
 #include "SmartRaceApi.h"
 #include "../model/Rules.h"
 #include "../model/CostModel.h"
@@ -14,8 +11,10 @@
 #include "../algo/Bfs.h"
 #include "../algo/Dfs.h"
 #include "../algo/RoutePlanner.h"
+#include "../sim/RaceEngine.h"
 #include "../core/util/String.h"
 #include "../core/util/MathUtil.h"
+#include "../core/util/Log.h"
 #include "../core/ds/DynArray.h"
 
 #include <cmath>
@@ -23,8 +22,6 @@
 
 namespace
 {
-    const int kMaxRacers = 4;
-
     struct CircuitEntry
     {
         const char* relativePath;
@@ -57,13 +54,16 @@ namespace
         true,                                    // showCostLabels
     };
 
+    // The currently loaded circuit. g_graph is a borrowed alias into
+    // g_trackData.graph (TrackData owns it); loading a new circuit or
+    // calling LoadTrackFile again frees the previous one automatically.
+    io::TrackData g_trackData;
     model::Graph* g_graph = nullptr;
     String g_circuitName;
     int g_laps = Rules::kDefaultLaps;
     int g_startVertex = -1;
     int g_finishVertex = -1;
     model::CostReferences g_costReferences;
-    DynArray<int> g_mainRoute;
 
     DynArray<VertexView> g_vertexViews;
     DynArray<EdgeView> g_edgeViews;
@@ -79,12 +79,13 @@ namespace
     algo::RouteCompareResult g_lastCompare;
     DynArray<RouteCandidateView> g_lastCompareViews;
 
-    // Racing stub state: fake racers driven along the loaded circuit's real
-    // MAINROUTE vertex sequence (Phase 2 replaces this with the real engine).
-    RacerView g_racers[kMaxRacers];
-    int g_racerCount = 0;
-    int g_racerRouteIndex[kMaxRacers];
-    int g_raceTimeMs = 0;
+    // The real race engine (Phase 2).
+    sim::RaceEngine* g_engine = nullptr;
+    DynArray<RacerView> g_racerViews;
+    DynArray<model::RaceResultRow> g_lastRaceResults;
+    DynArray<ResultRowView> g_resultRowViews;
+    DynArray<LogEntry> g_logEntryBuffer;
+    DynArray<LogLineView> g_logViewBuffer;
 
     void SetError(const char* message)
     {
@@ -140,6 +141,20 @@ namespace
         return (a == RouteAlgo::AStar) ? algo::RouteAlgo::AStar : algo::RouteAlgo::Dijkstra;
     }
 
+    RacerState ToApiRacerState(model::RacerState s)
+    {
+        switch (s)
+        {
+            case model::RacerState::OnEdge: return RacerState::OnEdge;
+            case model::RacerState::Refuelling: return RacerState::Refuelling;
+            case model::RacerState::Waiting: return RacerState::Waiting;
+            case model::RacerState::Finished: return RacerState::Finished;
+            case model::RacerState::Dnf: return RacerState::Dnf;
+            case model::RacerState::AtVertex:
+            default: return RacerState::AtVertex;
+        }
+    }
+
     void RebuildViews()
     {
         g_vertexViews.Clear();
@@ -177,48 +192,32 @@ namespace
         }
     }
 
-    int ResolveEdgeBetween(int from, int to)
+    void ComputeRacerPosition(const model::Racer& racer, double* outX, double* outY, double* outHeading)
     {
-        if (g_graph == nullptr) return -1;
-        for (const model::AdjNode* node = g_graph->Neighbors(from); node != nullptr; node = node->next)
+        if (racer.state == model::RacerState::OnEdge && racer.currentEdge >= 0)
         {
-            if (node->neighbor == to) return node->edgeId;
+            const model::Edge& e = g_graph->GetEdge(racer.currentEdge);
+            int fromVertex = (e.from == racer.currentTargetVertex) ? e.to : e.from;
+            const model::Vertex& from = g_graph->GetVertex(fromVertex);
+            const model::Vertex& to = g_graph->GetVertex(racer.currentTargetVertex);
+            *outX = from.x + (to.x - from.x) * racer.edgeProgress;
+            *outY = from.y + (to.y - from.y) * racer.edgeProgress;
+            *outHeading = atan2(to.y - from.y, to.x - from.x);
+            return;
         }
-        return -1;
-    }
 
-    void BuildStubRacers()
-    {
-        g_racerCount = (g_mainRoute.Size() >= 2) ? kMaxRacers : 0;
-        static const char* const kNames[kMaxRacers] = { "You", "Racer A", "Racer B", "Racer C" };
-
-        for (int i = 0; i < g_racerCount; ++i)
+        if (racer.currentVertex >= 0)
         {
-            RacerView& racer = g_racers[i];
-            racer.id = i;
-            racer.name = kNames[i];
-            racer.isHuman = (i == 0);
-            racer.state = RacerState::OnEdge;
-            racer.currentVertex = -1;
-            racer.edgeProgress = 0.0;
-            racer.fuelTenths = Rules::kMaxFuelTenths;
-            racer.nitroCharges = g_settings.startNitroCharges;
-            racer.nitroActive = false;
-            racer.lap = 1;
-            racer.nextCheckpoint = 1;
-            racer.livePosition = i + 1;
-            racer.totalTimeMs = 0;
-
-            g_racerRouteIndex[i] = i % g_mainRoute.Size();
-            int from = g_mainRoute[g_racerRouteIndex[i]];
-            int to = g_mainRoute[(g_racerRouteIndex[i] + 1) % g_mainRoute.Size()];
-            racer.currentEdge = ResolveEdgeBetween(from, to);
-
-            const model::Vertex& v = g_graph->GetVertex(from);
-            racer.x = v.x;
-            racer.y = v.y;
-            racer.heading = 0.0;
+            const model::Vertex& v = g_graph->GetVertex(racer.currentVertex);
+            *outX = v.x;
+            *outY = v.y;
+            *outHeading = 0.0;
+            return;
         }
+
+        *outX = 0.0;
+        *outY = 0.0;
+        *outHeading = 0.0;
     }
 }
 
@@ -239,8 +238,9 @@ void ApiShutdown()
     g_circuitLoaded = false;
     g_raceRunning = false;
     g_raceOver = false;
-    delete g_graph;
-    g_graph = nullptr;
+    delete g_engine;
+    g_engine = nullptr;
+    g_graph = nullptr;   // borrowed alias into g_trackData, not owned here
 }
 
 const char* ApiLastError()
@@ -277,10 +277,9 @@ ApiStatus ApiLoadCircuit(int index)
     path.Append("/");
     path.Append(kCircuits[index].relativePath);
 
-    io::TrackData data;
     int errorLine = 0;
     char errorMessage[200];
-    io::LoadResult loadResult = io::LoadTrackFile(path.CStr(), &data, &errorLine, errorMessage, sizeof(errorMessage));
+    io::LoadResult loadResult = io::LoadTrackFile(path.CStr(), &g_trackData, &errorLine, errorMessage, sizeof(errorMessage));
     if (loadResult != io::LoadResult::Ok)
     {
         char full[320];
@@ -289,15 +288,10 @@ ApiStatus ApiLoadCircuit(int index)
         return ApiStatus::IoError;
     }
 
-    delete g_graph;
-    g_graph = data.graph;
-    data.graph = nullptr;   // ownership transferred to g_graph; TrackData won't double-free it
+    g_graph = g_trackData.graph;   // borrowed; g_trackData owns it
 
-    g_circuitName.Set(data.name.Empty() ? kCircuits[index].fallbackName : data.name.CStr());
-    g_laps = data.laps;
-
-    g_mainRoute.Clear();
-    for (int i = 0; i < data.mainRoute.Size(); ++i) g_mainRoute.Push(data.mainRoute[i]);
+    g_circuitName.Set(g_trackData.name.Empty() ? kCircuits[index].fallbackName : g_trackData.name.CStr());
+    g_laps = g_trackData.laps;
 
     g_startVertex = -1;
     g_finishVertex = -1;
@@ -314,6 +308,8 @@ ApiStatus ApiLoadCircuit(int index)
     g_circuitLoaded = true;
     g_raceRunning = false;
     g_raceOver = false;
+    delete g_engine;
+    g_engine = nullptr;
     return ApiStatus::Ok;
 }
 
@@ -385,8 +381,7 @@ TrackInfo ApiGetTrackInfo()
     info.hasDeadEnd = deadEnds.deadEndVertices.Size() > 0;
 
     // The real TrackValidator lands in Phase 4; until then we report the
-    // structural checks we already have (connectivity is implied by
-    // Start/Finish both being set and the circuit having loaded at all).
+    // structural checks we already have.
     info.validatorPassed = (g_startVertex >= 0 && g_finishVertex >= 0 && cpCount >= Rules::kMandatoryCheckpointsPerCircuit);
 
     return info;
@@ -399,76 +394,240 @@ ApiStatus ApiRaceStart()
         SetError("no circuit loaded");
         return ApiStatus::NotLoaded;
     }
-    if (g_mainRoute.Size() < 2)
+    if (g_startVertex < 0 || g_finishVertex < 0)
     {
-        SetError("circuit has no MAINROUTE to drive the stub racers along");
+        SetError("circuit has no Start/Finish vertex");
         return ApiStatus::Infeasible;
     }
 
-    BuildStubRacers();
+    delete g_engine;
+    g_engine = new sim::RaceEngine();
+
+    sim::RaceConfig config;
+    config.laps = g_settings.laps;
+    config.opponentCount = g_settings.opponentCount;
+    config.humanPreset = ToModelPreset(g_settings.defaultPreset);
+    config.eventSeed = g_settings.eventSeed;
+    config.humanAutopilot = true;   // ApiCmdAutopilot(false) switches to manual
+
+    g_engine->Start(g_graph, g_trackData, config);
+    RebuildViews();   // the engine's EffectManager may have already touched edge state
+
     g_raceRunning = true;
     g_raceOver = false;
-    g_raceTimeMs = 0;
     return ApiStatus::Ok;
 }
 
 void ApiRaceStep(int ticks)
 {
-    if (!g_raceRunning || g_raceOver || g_mainRoute.Size() < 2) return;
+    if (g_engine == nullptr || !g_raceRunning || g_raceOver) return;
 
-    int routeLen = g_mainRoute.Size();
-
-    for (int t = 0; t < ticks; ++t)
+    for (int i = 0; i < ticks; ++i)
     {
-        g_raceTimeMs += Rules::kSimStepMs;
-
-        for (int i = 0; i < g_racerCount; ++i)
+        g_engine->Step();
+        if (g_engine->IsRaceOver())
         {
-            RacerView& racer = g_racers[i];
-            if (racer.state != RacerState::OnEdge) continue;
-
-            double speed = 60.0 + 10.0 * i;   // world units/sec, distinct per racer
-            int from = g_mainRoute[g_racerRouteIndex[i]];
-            int to = g_mainRoute[(g_racerRouteIndex[i] + 1) % routeLen];
-
-            const model::Vertex& vFrom = g_graph->GetVertex(from);
-            const model::Vertex& vTo = g_graph->GetVertex(to);
-            double segLength = MathUtil::Dist2D(vFrom.x, vFrom.y, vTo.x, vTo.y);
-            double step = (segLength > 0.0) ? (speed * (Rules::kSimStepMs / 1000.0) / segLength) : 1.0;
-
-            racer.edgeProgress += step;
-            if (racer.edgeProgress >= 1.0)
-            {
-                racer.edgeProgress = 0.0;
-                g_racerRouteIndex[i] = (g_racerRouteIndex[i] + 1) % routeLen;
-                from = g_mainRoute[g_racerRouteIndex[i]];
-                to = g_mainRoute[(g_racerRouteIndex[i] + 1) % routeLen];
-                racer.currentEdge = ResolveEdgeBetween(from, to);
-            }
-
-            const model::Vertex& a = g_graph->GetVertex(from);
-            const model::Vertex& b = g_graph->GetVertex(to);
-            racer.x = a.x + (b.x - a.x) * racer.edgeProgress;
-            racer.y = a.y + (b.y - a.y) * racer.edgeProgress;
-            racer.heading = atan2(b.y - a.y, b.x - a.x);
-            racer.totalTimeMs = g_raceTimeMs;
+            g_raceOver = true;
+            break;
         }
     }
+
+    RebuildViews();
 }
 
 RaceSnapshot ApiRaceSnapshot()
 {
     RaceSnapshot snapshot;
-    snapshot.timeMs = g_raceTimeMs;
-    snapshot.racers.data = g_racers;
-    snapshot.racers.count = g_raceRunning ? g_racerCount : 0;
+    snapshot.timeMs = 0;
+    snapshot.racers.data = nullptr;
+    snapshot.racers.count = 0;
     snapshot.raceOver = g_raceOver;
+
+    if (g_engine == nullptr) return snapshot;
+
+    snapshot.timeMs = g_engine->NowMs();
+
+    DynArray<model::RaceResultRow> liveResults;
+    g_engine->GetResults(&liveResults);
+
+    g_racerViews.Clear();
+    for (int i = 0; i < g_engine->RacerCount(); ++i)
+    {
+        const model::Racer& racer = g_engine->GetRacer(i);
+        RacerView rv;
+        rv.id = racer.id;
+        rv.name = racer.name;
+        rv.isHuman = racer.isHuman;
+        rv.state = ToApiRacerState(racer.state);
+        ComputeRacerPosition(racer, &rv.x, &rv.y, &rv.heading);
+        rv.currentVertex = racer.currentVertex;
+        rv.currentEdge = racer.currentEdge;
+        rv.edgeProgress = racer.edgeProgress;
+        rv.fuelTenths = racer.fuelTenths;
+        rv.nitroCharges = racer.nitroCharges;
+        rv.nitroActive = racer.nitroActive;
+        rv.lap = racer.lap;
+        rv.nextCheckpoint = racer.nextCheckpoint;
+        rv.totalTimeMs = racer.totalTimeMs;
+
+        rv.livePosition = i + 1;
+        for (int r = 0; r < liveResults.Size(); ++r)
+        {
+            if (liveResults[r].racerId == racer.id)
+            {
+                rv.livePosition = liveResults[r].finishPosition;
+                break;
+            }
+        }
+
+        g_racerViews.Push(rv);
+    }
+
+    snapshot.racers.data = g_racerViews.Data();
+    snapshot.racers.count = g_racerViews.Size();
     return snapshot;
 }
 
 bool ApiRaceOver()
 {
     return g_raceOver;
+}
+
+ApiStatus ApiCmdChooseEdge(int edgeId)
+{
+    if (g_engine == nullptr)
+    {
+        SetError("no race running");
+        return ApiStatus::NotLoaded;
+    }
+    if (!g_engine->CmdChooseEdge(edgeId))
+    {
+        SetError(g_engine->LastCommandError());
+        return ApiStatus::Illegal;
+    }
+    return ApiStatus::Ok;
+}
+
+ApiStatus ApiCmdNitro()
+{
+    if (g_engine == nullptr)
+    {
+        SetError("no race running");
+        return ApiStatus::NotLoaded;
+    }
+    if (!g_engine->CmdActivateNitro())
+    {
+        SetError(g_engine->LastCommandError());
+        return ApiStatus::Illegal;
+    }
+    return ApiStatus::Ok;
+}
+
+ApiStatus ApiCmdRefuel(int tenths)
+{
+    if (g_engine == nullptr)
+    {
+        SetError("no race running");
+        return ApiStatus::NotLoaded;
+    }
+    if (!g_engine->CmdRefuel(tenths))
+    {
+        SetError(g_engine->LastCommandError());
+        return ApiStatus::Illegal;
+    }
+    return ApiStatus::Ok;
+}
+
+ApiStatus ApiCmdAutopilot(bool on)
+{
+    if (g_engine == nullptr)
+    {
+        SetError("no race running");
+        return ApiStatus::NotLoaded;
+    }
+    g_engine->CmdSetAutopilot(on);
+    return ApiStatus::Ok;
+}
+
+ApiStatus ApiCmdPreset(Preset preset)
+{
+    if (g_engine == nullptr)
+    {
+        SetError("no race running");
+        return ApiStatus::NotLoaded;
+    }
+    g_engine->CmdSetPreset(ToModelPreset(preset));
+    return ApiStatus::Ok;
+}
+
+ResultsView ApiRaceResults()
+{
+    ResultsView view;
+    view.rows.data = nullptr;
+    view.rows.count = 0;
+
+    if (g_engine == nullptr)
+    {
+        SetError("no race running");
+        return view;
+    }
+
+    g_lastRaceResults.Clear();
+    g_engine->GetResults(&g_lastRaceResults);
+
+    g_resultRowViews.Clear();
+    for (int i = 0; i < g_lastRaceResults.Size(); ++i)
+    {
+        const model::RaceResultRow& r = g_lastRaceResults[i];
+        ResultRowView rv;
+        rv.racerId = r.racerId;
+        rv.finishPosition = r.finishPosition;
+        rv.finishTimeMs = r.finishTimeMs;
+        rv.bestLapTimeMs = r.bestLapTimeMs;
+        rv.bonusPoints = r.bonusPoints;
+        rv.pointsAwarded = r.pointsAwarded;
+        rv.status = static_cast<int>(r.status);
+        rv.lapsCompleted = r.lapsCompleted;
+        g_resultRowViews.Push(rv);
+    }
+
+    view.rows.data = g_resultRowViews.Data();
+    view.rows.count = g_resultRowViews.Size();
+    return view;
+}
+
+LogView ApiRaceLogSince(int lastSeenIndex)
+{
+    LogView view;
+    view.lines.data = nullptr;
+    view.lines.count = 0;
+
+    if (g_engine == nullptr) return view;
+
+    const int kMaxPerCall = 64;
+    LogEntry raw[kMaxPerCall];
+    int n = g_engine->EventLog().Since(lastSeenIndex, raw, kMaxPerCall);
+
+    // Two passes: first fill g_logEntryBuffer completely (so it stops
+    // growing/reallocating), THEN point g_logViewBuffer's text pointers
+    // into it -- otherwise an entry pointed at early in a single combined
+    // loop could dangle once a later Push reallocates the buffer.
+    g_logEntryBuffer.Clear();
+    for (int i = 0; i < n; ++i) g_logEntryBuffer.Push(raw[i]);
+
+    g_logViewBuffer.Clear();
+    for (int i = 0; i < g_logEntryBuffer.Size(); ++i)
+    {
+        LogLineView lv;
+        lv.index = g_logEntryBuffer[i].index;
+        lv.timeMs = g_logEntryBuffer[i].timeMs;
+        lv.text = g_logEntryBuffer[i].text;
+        g_logViewBuffer.Push(lv);
+    }
+
+    view.lines.data = g_logViewBuffer.Data();
+    view.lines.count = g_logViewBuffer.Size();
+    return view;
 }
 
 // ---------------------------------------------------------------------- //

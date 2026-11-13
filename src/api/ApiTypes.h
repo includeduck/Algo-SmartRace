@@ -214,3 +214,36 @@ struct RouteCompareView
 {
     ArrayView<RouteCandidateView> candidates;
 };
+
+// ---------------------------------------------------------------------- //
+// Racing results and event log — added in Phase 2
+// ---------------------------------------------------------------------- //
+
+struct ResultRowView
+{
+    int racerId;
+    int finishPosition;
+    int finishTimeMs;       // -1 if did not finish
+    int bestLapTimeMs;        // INT_MAX if no lap completed
+    int bonusPoints;
+    int pointsAwarded;
+    int status;                 // 0 = Finished, 1 = Dnf, 2 = TimeLimit (mirrors model::RaceStatus)
+    int lapsCompleted;
+};
+
+struct ResultsView
+{
+    ArrayView<ResultRowView> rows;
+};
+
+struct LogLineView
+{
+    int index;
+    int timeMs;
+    const char* text;
+};
+
+struct LogView
+{
+    ArrayView<LogLineView> lines;
+};

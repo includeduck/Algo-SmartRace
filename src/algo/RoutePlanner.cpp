@@ -199,37 +199,39 @@ namespace algo
             candidate->totalFuel = fuel;
         }
 
-        // Alternative routes come back from DfsAlternativeRoutes as vertex
-        // sequences only; re-derive the edge actually used between each
-        // consecutive pair (cheapest-by-distance if parallel edges exist).
-        bool BuildEdgePathFromVertices(const model::Graph& graph, const DynArray<int>& vertexPath,
-            DynArray<int>* outEdges)
+    }
+
+    // Alternative routes come back from DfsAlternativeRoutes as vertex
+    // sequences only; re-derive the edge actually used between each
+    // consecutive pair (cheapest-by-distance if parallel edges exist).
+    // Declared in the header -- see its comment there for who else uses it.
+    bool BuildEdgePathFromVertices(const model::Graph& graph, const DynArray<int>& vertexPath,
+        DynArray<int>* outEdges)
+    {
+        for (int i = 0; i + 1 < vertexPath.Size(); ++i)
         {
-            for (int i = 0; i + 1 < vertexPath.Size(); ++i)
+            int from = vertexPath[i];
+            int to = vertexPath[i + 1];
+
+            int bestEdge = -1;
+            double bestDistance = -1.0;
+            for (const model::AdjNode* node = graph.Neighbors(from); node != nullptr; node = node->next)
             {
-                int from = vertexPath[i];
-                int to = vertexPath[i + 1];
+                if (node->neighbor != to) continue;
+                if (!graph.IsTraversable(node->edgeId)) continue;
 
-                int bestEdge = -1;
-                double bestDistance = -1.0;
-                for (const model::AdjNode* node = graph.Neighbors(from); node != nullptr; node = node->next)
+                double d = graph.GetEdge(node->edgeId).distance;
+                if (bestEdge == -1 || d < bestDistance)
                 {
-                    if (node->neighbor != to) continue;
-                    if (!graph.IsTraversable(node->edgeId)) continue;
-
-                    double d = graph.GetEdge(node->edgeId).distance;
-                    if (bestEdge == -1 || d < bestDistance)
-                    {
-                        bestEdge = node->edgeId;
-                        bestDistance = d;
-                    }
+                    bestEdge = node->edgeId;
+                    bestDistance = d;
                 }
-
-                if (bestEdge == -1) return false;
-                outEdges->Push(bestEdge);
             }
-            return true;
+
+            if (bestEdge == -1) return false;
+            outEdges->Push(bestEdge);
         }
+        return true;
     }
 
     RouteCompareResult CompareRoutes(const model::Graph& graph, int source, int target,

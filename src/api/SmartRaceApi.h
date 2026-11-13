@@ -32,14 +32,18 @@
 //     real 3 circuits via TrackLoader and reflect the real Graph. Added the
 //     Track Explorer queries (BFS reachability, DFS components/cycles/dead
 //     ends) and route planning (Dijkstra/A*, checkpoint-aware PlanLap,
-//     CompareRoutes). Racing (ApiRaceStart/Step/Snapshot) is STILL the
-//     Phase 0 stub — the real race engine replaces it in Phase 2 without
-//     changing its signatures. Resource planning, championship and the
-//     Algorithm Lab are added in later phases as pure ADDITIONS to this
-//     header. API freeze: 29 Nov 2026.
+//     CompareRoutes).
+//   v0.3 (Phase 2): ApiRaceStart/Step/Snapshot/Over are now backed by the
+//     real deterministic RaceEngine (event queue, effects, fuel/nitro,
+//     checkpoint/lap tracking, the 3 opponent strategies, the recovery
+//     policy) — their signatures are unchanged from v0.1's stub. Added
+//     human commands (ApiCmdChooseEdge/Nitro/Refuel/Autopilot/Preset),
+//     ApiRaceResults and ApiRaceLogSince. Resource planning, championship
+//     and the Algorithm Lab are added in later phases as pure ADDITIONS to
+//     this header. API freeze: 29 Nov 2026.
 // ===========================================================================
 
-#define SMARTRACE_API_VERSION 2
+#define SMARTRACE_API_VERSION 3
 
 // ---------------------------------------------------------------------- //
 // Session / Main Menu
@@ -80,9 +84,9 @@ GraphView ApiGetGraph();
 TrackInfo ApiGetTrackInfo();
 
 // ---------------------------------------------------------------------- //
-// Racing — STUB in v0.1 (one hard-coded circuit, fake deterministic
-// racers). The real deterministic race engine replaces this body in
-// Phase 2 without changing these signatures.
+// Racing — real as of Phase 2 (deterministic RaceEngine). Starts 1 human
+// (autopilot, on the current Settings' preset) + Settings.opponentCount
+// opponents cycling through the 3 deterministic strategies.
 // ---------------------------------------------------------------------- //
 
 ApiStatus ApiRaceStart();
@@ -94,6 +98,24 @@ void ApiRaceStep(int ticks);
 RaceSnapshot ApiRaceSnapshot();
 
 bool ApiRaceOver();
+
+// Human commands. Each returns Illegal (with ApiLastError() set) rather
+// than doing something invalid — an illegal edge, insufficient fuel for
+// a purchase amount, no nitro charges, etc.
+ApiStatus ApiCmdChooseEdge(int edgeId);
+ApiStatus ApiCmdNitro();
+ApiStatus ApiCmdRefuel(int tenths);
+ApiStatus ApiCmdAutopilot(bool on);
+ApiStatus ApiCmdPreset(Preset preset);
+
+// Current standings (meaningful mid-race as a live running order too, not
+// only once ApiRaceOver()). Valid until the next ApiRaceStep/ApiRaceResults
+// call.
+ResultsView ApiRaceResults();
+
+// New event-ticker lines since `lastSeenIndex` (pass -1 the first time).
+// Valid until the next ApiRaceLogSince/ApiRaceStep call.
+LogView ApiRaceLogSince(int lastSeenIndex);
 
 // ---------------------------------------------------------------------- //
 // Track Explorer / Route Planner (Screen 2) — Phase 1

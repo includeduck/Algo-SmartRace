@@ -111,4 +111,15 @@ namespace algo
     RouteCompareResult CompareRoutes(const model::Graph& graph, int source, int target,
         const model::Weights& evalWeights, const model::CostReferences& refs,
         AlgoStats* stats = nullptr, Trace* trace = nullptr);
+
+    // Resolves the edge actually used between each consecutive pair of a
+    // vertex sequence (cheapest-by-distance if parallel edges connect the
+    // same pair), appending to `outEdges`. Returns false if some
+    // consecutive pair has no traversable connecting edge at all. Shared by
+    // CompareRoutes' alternative-route candidates and by the opponent
+    // strategies (sim/Strategies), which build vertex sequences of their
+    // own (main-route following, shortcut/detour splicing) and need the
+    // same vertices-to-edges resolution.
+    bool BuildEdgePathFromVertices(const model::Graph& graph, const DynArray<int>& vertexPath,
+        DynArray<int>* outEdges);
 }

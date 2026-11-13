@@ -58,7 +58,7 @@ EDGE 30 0 6 183.85 4.38 8.27 5 1 0
 EDGE 31 12 18 183.85 4.38 8.27 5 1 0
 
 # Opponent 1: fixed main route (one lap)
-MAINROUTE 0 1 2 3 4 9 8 7 6 11 16 17 18 19
+MAINROUTE 0 1 2 3 4 9 8 7 6 11 16 17 18 19 18 17 16 11 6 7 8 9 4 3 2 1 0
 
 # Opponent 2: preferred shortcuts
 SHORTCUT 30
