@@ -163,3 +163,54 @@ struct RaceSnapshot
     ArrayView<RacerView> racers;
     bool raceOver;
 };
+
+// ---------------------------------------------------------------------- //
+// Track Explorer / Route Planner (Screen 2) — added in Phase 1
+// ---------------------------------------------------------------------- //
+
+struct ReachabilityView
+{
+    bool found;                           // meaningful only when a target >= 0 was given
+    ArrayView<int> path;                    // source..target, only set when found
+    ArrayView<bool> reachable;               // per-vertex, sized to the graph's vertex count
+    ArrayView<int> reachableCheckpoints;      // mandatory checkpoint ORDER numbers reachable
+};
+
+struct ComponentsView
+{
+    int componentCount;
+    ArrayView<int> componentId;   // per-vertex, 0-based
+};
+
+struct CycleView
+{
+    bool hasCycle;
+    ArrayView<int> witnessCycle;   // a vertex sequence forming one cycle, if hasCycle
+};
+
+struct DeadEndsView
+{
+    ArrayView<int> deadEndVertices;
+};
+
+struct RouteView
+{
+    bool found;
+    int blockedLegIndex;      // -1 if found, else the first leg (toward a checkpoint/finish) that failed
+    ArrayView<int> vertexPath;
+    ArrayView<int> edgePath;
+    double totalCost, totalDistance, totalTime, totalFuel;
+};
+
+struct RouteCandidateView
+{
+    const char* label;   // e.g. "Balanced", "Speed", "Alternative 1"
+    bool found;
+    ArrayView<int> vertexPath;
+    double totalCost, totalDistance, totalTime, totalFuel;   // all under the comparison's evalPreset
+};
+
+struct RouteCompareView
+{
+    ArrayView<RouteCandidateView> candidates;
+};

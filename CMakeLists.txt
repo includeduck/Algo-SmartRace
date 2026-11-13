@@ -7,6 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8)
+    # We deliberately use plain C stdio (fopen, fgets, vsnprintf) rather than
+    # the MSVC-only "_s" variants, for portability — silence that warning.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     add_compile_options(-Wall -Wextra)
 endif()

@@ -27,14 +27,19 @@
 //   v0.1 (Phase 0): Init/shutdown, circuit list, static graph view,
 //     settings, and a STUB race (one hard-coded loop circuit, a few fake
 //     racers moving deterministically) so the GUI can be built and driven
-//     end to end immediately. Track Explorer queries (BFS/DFS/Dijkstra/A*),
-//     the real race engine, resource planning, championship and the
+//     end to end immediately.
+//   v0.2 (Phase 1): ApiLoadCircuit/ApiGetGraph/ApiGetTrackInfo now load the
+//     real 3 circuits via TrackLoader and reflect the real Graph. Added the
+//     Track Explorer queries (BFS reachability, DFS components/cycles/dead
+//     ends) and route planning (Dijkstra/A*, checkpoint-aware PlanLap,
+//     CompareRoutes). Racing (ApiRaceStart/Step/Snapshot) is STILL the
+//     Phase 0 stub — the real race engine replaces it in Phase 2 without
+//     changing its signatures. Resource planning, championship and the
 //     Algorithm Lab are added in later phases as pure ADDITIONS to this
-//     header — existing signatures below do not change after a phase ships
-//     them for real. API freeze: 29 Nov 2026.
+//     header. API freeze: 29 Nov 2026.
 // ===========================================================================
 
-#define SMARTRACE_API_VERSION 1
+#define SMARTRACE_API_VERSION 2
 
 // ---------------------------------------------------------------------- //
 // Session / Main Menu
@@ -89,3 +94,37 @@ void ApiRaceStep(int ticks);
 RaceSnapshot ApiRaceSnapshot();
 
 bool ApiRaceOver();
+
+// ---------------------------------------------------------------------- //
+// Track Explorer / Route Planner (Screen 2) — Phase 1
+// ---------------------------------------------------------------------- //
+
+// BFS reachability/min-edge path from `source`. Pass target = -1 for full
+// reachability only (ApiRunBfs(src, -1).found is always false; read
+// `reachable`/`reachableCheckpoints` instead). Valid until the next
+// ApiRunBfs/ApiLoadCircuit* call.
+ReachabilityView ApiRunBfs(int source, int target);
+
+// Weakly-connected components of the current track (roads treated as
+// undirected). Valid until the next ApiRunDfsComponents/ApiLoadCircuit* call.
+ComponentsView ApiRunDfsComponents();
+
+// Whether the current track contains a cycle anywhere, directed or
+// undirected. Valid until the next ApiRunDfsCycles/ApiLoadCircuit* call.
+CycleView ApiRunDfsCycles();
+
+// Non-mandatory vertices the finish cannot be reached from without
+// reversing (Project.pdf section 5.1). Valid until the next
+// ApiRunDeadEnds/ApiLoadCircuit* call.
+DeadEndsView ApiRunDeadEnds();
+
+// Plans the whole remaining lap from the track's Start vertex, through
+// every mandatory checkpoint in order, to Finish, under `preset` using
+// `algo`. Valid until the next ApiPlanLap/ApiLoadCircuit* call.
+RouteView ApiPlanLap(Preset preset, RouteAlgo algo);
+
+// Up to 4 candidate Start->Finish routes (one per preset, deduplicated,
+// plus bounded DFS alternatives), each shown under `evalPreset`'s cost so
+// the comparison is apples to apples. Valid until the next
+// ApiCompareRoutes/ApiLoadCircuit* call.
+RouteCompareView ApiCompareRoutes(Preset evalPreset);

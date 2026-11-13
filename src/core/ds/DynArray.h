@@ -19,6 +19,32 @@ public:
     DynArray(const DynArray&) = delete;
     DynArray& operator=(const DynArray&) = delete;
 
+    // Move-only: lets result structs built from several DynArray fields
+    // (BfsResult, DfsTraversalResult, ...) be returned by value without a
+    // deep copy. This is a core C++ language feature, not STL.
+    DynArray(DynArray&& other) noexcept
+        : m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity)
+    {
+        other.m_data = nullptr;
+        other.m_size = 0;
+        other.m_capacity = 0;
+    }
+
+    DynArray& operator=(DynArray&& other) noexcept
+    {
+        if (this != &other)
+        {
+            delete[] m_data;
+            m_data = other.m_data;
+            m_size = other.m_size;
+            m_capacity = other.m_capacity;
+            other.m_data = nullptr;
+            other.m_size = 0;
+            other.m_capacity = 0;
+        }
+        return *this;
+    }
+
     ~DynArray()
     {
         delete[] m_data;
