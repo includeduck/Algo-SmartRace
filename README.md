@@ -1,4 +1,52 @@
-# Smart Racing Championship — Backend
+# Smart Racing Championship
+
+## Native GUI
+
+The Windows x64 GUI now lives in `src/app/` and links the backend exclusively
+through `api/SmartRaceApi.h`. It includes the Main Menu, Track Explorer, Racing,
+Algorithm Lab and Championship Dashboard. raylib 5.5 and raygui 4.0 are vendored
+under `third_party/` with their licenses; the configured build needs no download.
+
+Build with Visual Studio 2026/MSVC and CMake 3.20+:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+cmake --build build --config Debug
+cmake --build build --config Release
+Push-Location build/Release
+.\smartrace.exe
+Pop-Location
+```
+
+Run from the executable directory (data is copied there by the build), or the
+repository root. Missing data displays an error and retry control. Release has
+no console window; Debug keeps its console for diagnostics.
+
+Controls: Tab/Shift-Tab focuses controls; Enter/Space activates buttons;
+Left/Right changes a focused numeric control. Mouse wheel scrolls panels, and
+PgUp/PgDn scrolls long details. On the map, wheel zooms, middle-drag pans and F
+fits. In BFS, click a target or Shift-click a source. During racing, P pauses,
+A toggles autopilot, N activates nitro and L opens the Lab without advancing
+simulation time. Manual controls let the backend validate outgoing roads and
+fuel purchases. Use Wait to let events progress while waiting for a road.
+
+The Lab arrows select all 13 modules. Run records the real backend trace;
+playback/seek, pseudocode and counters inspect it. Table row/column controls
+expose large DP tables. Generator Save writes `generated_track.trk` in the
+working directory; loading it is locked during a live race/championship.
+
+GUI contract checks build as `smartrace_gui_checks.exe`; run from the repository
+root. See [verification](docs/gui-verification.md) for the pending manual matrix
+and [backend handoff](docs/gui-backend-handoff.md) for exact remaining contracts.
+Debug/Release compilation does not establish interactive correctness. Windows
+Application Control may require running from an allowed local developer session.
+
+Acknowledgements: [raylib](https://github.com/raysan5/raylib) and
+[raygui](https://github.com/raysan5/raygui), by Ramon Santamaria and contributors,
+are used under their bundled zlib/libpng licenses. The GUI uses procedural
+shapes and the library's bundled font; no external art assets were added.
+
+## Backend reference
 
 Design and Analysis of Algorithms project. This repository currently holds
 the **backend** (Muhammad Wasay Tariq, 24I-3071): the data model, all 12
