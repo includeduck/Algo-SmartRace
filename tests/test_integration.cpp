@@ -362,3 +362,55 @@ TEST(RaceEngine_NitroCollection_CancelsPendingExpiryEvent)
 
     delete g;
 }
+
+TEST(RaceEngine_EventWithWrongKindOfTarget_IsRejected)
+{
+    // Section 4.5: an event must target an element that exists AND is the
+    // right kind. A station outage aimed at a checkpoint, a nitro booster
+    // aimed at the Start and a shortcut toggle aimed at an ordinary road
+    // must all be rejected (logged), leaving the track untouched.
+    io::TrackData trackData;
+    Graph* g = BuildLoop(&trackData);
+
+    io::ScriptedEvent outage;
+    outage.triggerTimeMs = 20;
+    outage.type.Set("FuelStationToggle");
+    outage.target = 1;   // CP1, not a station
+    outage.durationMs = 30000;
+    trackData.events.Push(outage);
+
+    io::ScriptedEvent booster;
+    booster.triggerTimeMs = 20;
+    booster.type.Set("NitroBooster");
+    booster.target = 0;   // the Start, not a nitro pickup
+    booster.durationMs = 25000;
+    trackData.events.Push(booster);
+
+    io::ScriptedEvent toggle;
+    toggle.triggerTimeMs = 20;
+    toggle.type.Set("ShortcutToggle");
+    toggle.target = 0;   // an ordinary road
+    toggle.durationMs = 0;
+    trackData.events.Push(toggle);
+
+    RaceEngine engine;
+    engine.Start(g, trackData, DefaultConfig(1));
+    for (int i = 0; i < 5; ++i) engine.Step();
+
+    LogEntry lines[64];
+    int count = engine.EventLog().Since(-1, lines, 64);
+    int rejected = 0;
+    for (int i = 0; i < count; ++i)
+    {
+        const char* t = lines[i].text;
+        for (int k = 0; t[k] != '\0'; ++k)
+        {
+            if (t[k] == 'r' && t[k + 1] == 'e' && t[k + 2] == 'j' && t[k + 3] == 'e' && t[k + 4] == 'c') ++rejected;
+        }
+    }
+    CHECK_EQ(rejected, 3);
+    CHECK(g->GetVertex(1).active);
+    CHECK(g->IsTraversable(0));
+
+    delete g;
+}

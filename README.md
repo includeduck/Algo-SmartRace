@@ -79,6 +79,19 @@ Debug builds of `smartrace_tests` and `smartrace_cli` enable the MSVC CRT
 debug heap's leak report: any block still allocated at exit is printed to
 stderr as `Detected memory leaks!`. A clean run prints nothing.
 
+## Report and submission
+
+- `report/` holds the technical report's chapters as Markdown (see
+  `report/README.md` for who writes what and how to make the PDF).
+- `tools/package.ps1` builds Release, runs the tests, and writes
+  `build/package/24I-3071_24I-3000_<Section>.zip` (sources, data, results,
+  report, and `bin/` with the Release executables). `-Verify` then rebuilds
+  and re-tests from the extracted ZIP in an empty folder:
+
+```bash
+powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Section BCS-5A -Verify
+```
+
 ## API status (for the GUI)
 
 `SmartRaceApi.h` is **v1.0 and frozen** (`SMARTRACE_API_VERSION 10`): from

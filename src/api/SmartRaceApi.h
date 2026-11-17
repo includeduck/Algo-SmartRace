@@ -57,6 +57,10 @@
 //     opponentCount 3..9, startNitroCharges 0..3) instead of storing them;
 //     Settings.startNitroCharges now really sets every racer's starting
 //     nitro (it was ignored before).
+//   v1.0.2 (Phase 6, behaviour only, no signature changes): the human
+//     autopilot routes with A* (same optimal cost as Dijkstra); a scripted
+//     event whose target is the wrong kind of element (e.g. a station
+//     outage on a checkpoint) is rejected with a log line.
 // ===========================================================================
 
 #define SMARTRACE_API_VERSION 10

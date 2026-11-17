@@ -225,6 +225,17 @@ namespace sim
         m_log.Write(LogLevel::Info, m_nowMs, "%s", buffer);
     }
 
+    namespace
+    {
+        // Event-target validation (Project.pdf 4.5: "validate that an
+        // event target exists and that the event is valid in the current
+        // state"): the id must exist AND be the right kind of element.
+        bool VertexIs(const model::Graph& g, int v, model::VertexType type)
+        {
+            return v >= 0 && v < g.VertexCount() && g.GetVertex(v).type == type;
+        }
+    }
+
     void RaceEngine::OnEvent(const Event& event)
     {
         switch (event.type)
@@ -256,7 +267,7 @@ namespace sim
                 break;
 
             case EventType::ShortcutToggle:
-                if (event.target >= 0 && event.target < m_graph->EdgeCount())
+                if (event.target >= 0 && event.target < m_graph->EdgeCount() && m_graph->GetEdge(event.target).isShortcut)
                 {
                     bool currentlyOpen = m_graph->IsTraversable(event.target);
                     m_effects->SetShortcutOpen(event.target, !currentlyOpen);
@@ -265,7 +276,7 @@ namespace sim
                 }
                 else
                 {
-                    LogLine("ShortcutToggle rejected: edge %d does not exist", event.target);
+                    LogLine("ShortcutToggle rejected: edge %d is not a shortcut", event.target);
                 }
                 break;
 
@@ -320,7 +331,7 @@ namespace sim
                 break;
 
             case EventType::FuelStationToggle:
-                if (event.target >= 0 && event.target < m_graph->VertexCount())
+                if (VertexIs(*m_graph, event.target, model::VertexType::FuelStation))
                 {
                     m_effects->SetVertexActive(event.target, false);
                     m_events->Schedule(EventType::FuelStationReactivate,
@@ -330,12 +341,12 @@ namespace sim
                 }
                 else
                 {
-                    LogLine("FuelStationToggle rejected: vertex %d does not exist", event.target);
+                    LogLine("FuelStationToggle rejected: vertex %d is not a fuel station", event.target);
                 }
                 break;
 
             case EventType::FuelStationReactivate:
-                if (event.target >= 0 && event.target < m_graph->VertexCount())
+                if (VertexIs(*m_graph, event.target, model::VertexType::FuelStation))
                 {
                     m_effects->SetVertexActive(event.target, true);
                     LogLine("Fuel station reactivated: vertex %d", event.target);
@@ -344,7 +355,7 @@ namespace sim
                 break;
 
             case EventType::NitroBooster:
-                if (event.target >= 0 && event.target < m_graph->VertexCount())
+                if (VertexIs(*m_graph, event.target, model::VertexType::NitroPickup))
                 {
                     m_effects->SetVertexActive(event.target, true);
                     int expireId = m_events->Schedule(EventType::NitroBoosterExpire,
@@ -354,12 +365,12 @@ namespace sim
                 }
                 else
                 {
-                    LogLine("NitroBooster rejected: vertex %d does not exist", event.target);
+                    LogLine("NitroBooster rejected: vertex %d is not a nitro pickup", event.target);
                 }
                 break;
 
             case EventType::NitroBoosterExpire:
-                if (event.target >= 0 && event.target < m_graph->VertexCount())
+                if (VertexIs(*m_graph, event.target, model::VertexType::NitroPickup))
                 {
                     m_effects->SetVertexActive(event.target, false);
                     m_pendingNitroExpireEventId[event.target] = -1;
@@ -752,8 +763,12 @@ namespace sim
 
         if (racer.isHuman)
         {
+            // The human's autopilot routes with A* (Opponent 3 and the
+            // resource planner use Dijkstra): same optimal cost -- the
+            // heuristic is consistent, see algo/AStar.h -- with fewer
+            // vertices expanded per leg. This is A*'s in-race role.
             algo::PlanResult plan = algo::PlanLap(*m_graph, racer.currentVertex, racer.nextCheckpoint - 1,
-                m_finishVertex, m_humanWeights, m_costReferences, algo::RouteAlgo::Dijkstra);
+                m_finishVertex, m_humanWeights, m_costReferences, algo::RouteAlgo::AStar);
             if (plan.found) StorePlan(racer, plan.vertexPath, plan.edgePath);
         }
         else

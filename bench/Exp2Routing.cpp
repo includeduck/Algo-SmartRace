@@ -13,7 +13,8 @@
 // Timed: the search only. The cost references (normalisation) and A*'s
 // heuristic scale (one O(E) pass, minimum cost/straight-line ratio) are
 // computed once per graph and preset outside the timed region; the scale's
-// own cost is reported as the separate "AStar_scale" row. Each search call
+// own cost is reported as the separate "AStar_scale" row. Dijkstra and A*
+// are timed in alternating runs (paired), so clock-speed drift affects both. Each search call
 // includes initialising its own dist/parent arrays and heap.
 //
 // Correctness (untimed): A* cost == Dijkstra cost (relative error < 1e-9)
@@ -83,37 +84,50 @@ namespace
 
             algo::AlgoStats ds;
             algo::PathResult dr = algo::Dijkstra(g, source, target, w, refs, &ds);
-            {
-                auto run = [&]()
-                {
-                    algo::PathResult r = algo::Dijkstra(g, source, target, w, refs);
-                    g_benchSink = g_benchSink + r.edgePath.Size();
-                };
-                Measure(cfg, reps, run, samples);
-                snprintf(config, sizeof(config), "Dijkstra,%s,%s,%s,%d,%d,%d,%d,yes", graphName, queryName,
-                    kPresetNames[p], g.VertexCount(), g.EdgeCount(), source, target);
-                snprintf(counters, sizeof(counters), "%lld,%lld,%lld,%lld,%lld,%.6f,%d,%.6f", ds.verticesVisited,
-                    ds.edgesRelaxed, ds.heapPushes, ds.heapPops, ds.heapPushes + ds.heapPops, dr.totalCost,
-                    dr.edgePath.Size(), 0.0);
-                out.Emit(cfg, config, reps, samples, counters);
-            }
-
             algo::AlgoStats as;
             algo::PathResult ar = algo::AStar(g, source, target, w, refs, scale, &as);
+
+            // Paired timing: Dijkstra and A* runs alternate (D, A, D, A,
+            // ...), so slow drift in the CPU's clock speed over the run hits
+            // both algorithms equally instead of whichever block ran second.
+            double aSamples[kMaxRuns];
+            auto runD = [&]()
             {
-                auto run = [&]()
+                algo::PathResult r = algo::Dijkstra(g, source, target, w, refs);
+                g_benchSink = g_benchSink + r.edgePath.Size();
+            };
+            auto runA = [&]()
+            {
+                algo::PathResult r = algo::AStar(g, source, target, w, refs, scale);
+                g_benchSink = g_benchSink + r.edgePath.Size();
+            };
+            for (int r = -cfg.warmup; r < cfg.runs; ++r)
+            {
+                double t0 = Timer::NowMicros();
+                for (int k = 0; k < reps; ++k) runD();
+                double t1 = Timer::NowMicros();
+                for (int k = 0; k < reps; ++k) runA();
+                double t2 = Timer::NowMicros();
+                if (r >= 0)
                 {
-                    algo::PathResult r = algo::AStar(g, source, target, w, refs, scale);
-                    g_benchSink = g_benchSink + r.edgePath.Size();
-                };
-                Measure(cfg, reps, run, samples);
-                snprintf(config, sizeof(config), "AStar,%s,%s,%s,%d,%d,%d,%d,yes", graphName, queryName,
-                    kPresetNames[p], g.VertexCount(), g.EdgeCount(), source, target);
-                snprintf(counters, sizeof(counters), "%lld,%lld,%lld,%lld,%lld,%.6f,%d,%.6f", as.verticesVisited,
-                    as.edgesRelaxed, as.heapPushes, as.heapPops, as.heapPushes + as.heapPops, ar.totalCost,
-                    ar.edgePath.Size(), scale);
-                out.Emit(cfg, config, reps, samples, counters);
+                    samples[r] = (t1 - t0) / reps;
+                    aSamples[r] = (t2 - t1) / reps;
+                }
             }
+
+            snprintf(config, sizeof(config), "Dijkstra,%s,%s,%s,%d,%d,%d,%d,yes", graphName, queryName,
+                kPresetNames[p], g.VertexCount(), g.EdgeCount(), source, target);
+            snprintf(counters, sizeof(counters), "%lld,%lld,%lld,%lld,%lld,%.6f,%d,%.6f", ds.verticesVisited,
+                ds.edgesRelaxed, ds.heapPushes, ds.heapPops, ds.heapPushes + ds.heapPops, dr.totalCost,
+                dr.edgePath.Size(), 0.0);
+            out.Emit(cfg, config, reps, samples, counters);
+
+            snprintf(config, sizeof(config), "AStar,%s,%s,%s,%d,%d,%d,%d,yes", graphName, queryName,
+                kPresetNames[p], g.VertexCount(), g.EdgeCount(), source, target);
+            snprintf(counters, sizeof(counters), "%lld,%lld,%lld,%lld,%lld,%.6f,%d,%.6f", as.verticesVisited,
+                as.edgesRelaxed, as.heapPushes, as.heapPops, as.heapPushes + as.heapPops, ar.totalCost,
+                ar.edgePath.Size(), scale);
+            out.Emit(cfg, config, reps, aSamples, counters);
 
             double diff = fabs(dr.totalCost - ar.totalCost);
             double tolerance = 1e-9 * (dr.totalCost > 1.0 ? dr.totalCost : 1.0);
