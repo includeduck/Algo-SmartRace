@@ -4,7 +4,7 @@
 
 ## 7.1 Strategy
 
-- **Unit and integration tests** (`tests/`, executable `smartrace_tests`): a small framework written for the project, with no STL. `TEST(name)` registers a function and `CHECK` / `CHECK_EQ` record failures with file and line. The exit code is the number of failed checks. **124 tests, 28 348 checks, all passing** on both the Debug and Release builds.
+- **Unit and integration tests** (`tests/`, executable `smartrace_tests`): a small framework written for the project, with no STL. `TEST(name)` registers a function and `CHECK` / `CHECK_EQ` record failures with file and line. The exit code is the number of failed checks. **129 tests, 28 480 checks, all passing** on both the Debug and Release builds.
 - **Oracles instead of hand-computed answers** wherever possible: DP against exhaustive search, A* against Dijkstra, BFS against a brute-force relaxation, DFS components against union-find, every sort against the other two and against the comparator, top-k against the sorted prefix, the event heap against a merge-sorted reference. The same oracles run again on large inputs in the experiments (section 8): 248 more checks, all passing.
 - **Determinism tests:** the same race run twice gives the same result hash (engine level and through the API), and the same generator seed gives the same track.
 - **API robustness tests:** every call before `ApiInit` and with nothing loaded; bad ids and paths; illegal human commands; snapshot invariants on every step of a full race; settings validation.
@@ -52,14 +52,14 @@
 | | championship standings | `Championship_AccumulatesPointsWinsPositionsAndBestLap`, `Championship_ThreeSortsAgree_TopKMatchesPrefix_ChampionDeclared`, `Championship_UnfinishedFirstPlaceIsNotAWin` |
 | | determinism | `RaceEngine_SameSeedTwice_ProducesSameDeterminismHash`, `Api_SameSettingsTwice_SameResults` |
 
-**Further groups:** data structures (14 tests: growth, wrap-around, heap order and heapify, union-find, pool, string, deterministic RNG, log ring buffer); the three opponent strategies (8); track generation and validation (9: Kruskal, the validator accepting all three circuits and rejecting deliberately broken ones with the right reason, generation across seeds, determinism, impossible parameters, write/read round trip); the Algorithm Lab (9: trace replay of BFS, of each sort and of the knapsack table matches the real result; seeking backwards equals seeking forwards; every Lab module runs; event-queue pop order; a generated track saves, reloads and validates); the API (7).
+**Further groups:** data structures (14 tests: growth, wrap-around, heap order and heapify, union-find, pool, string, deterministic RNG, log ring buffer); the three opponent strategies (8); track generation and validation (9: Kruskal, the validator accepting all three circuits and rejecting deliberately broken ones with the right reason, generation across seeds, determinism, impossible parameters, write/read round trip); the Algorithm Lab (9: trace replay of BFS, of each sort and of the knapsack table matches the real result; seeking backwards equals seeking forwards; every Lab module runs; event-queue pop order; a generated track saves, reloads and validates); the API (12: 7 for v1.0 plus 5 for the v1.1 additions).
 
 ## 7.3 Results
 
 | Build | Tests | Checks | Failures | Leaks |
 |---|---|---|---|---|
-| Debug (x64, MSVC 19.51) | 124 | 28 348 | 0 | none reported |
-| Release (x64, /O2) | 124 | 28 348 | 0 | (not instrumented) |
+| Debug (x64, MSVC 19.51) | 129 | 28 480 | 0 | none reported |
+| Release (x64, /O2) | 129 | 28 480 | 0 | (not instrumented) |
 | Experiments' correctness checks (Release) | — | 248 | 0 | — |
 
 Run them with `build/Debug/smartrace_tests.exe` (or `build/Release/…`) from the repository root.
@@ -78,7 +78,7 @@ Testing paid off. These defects were found by tests or experiments during develo
 
 ## 7.5 GUI integration review — 17 November 2026
 
-GUI section by Syed Muhammad Rayyan Hassan (24I-3000). The earlier 124-test table records the partner's Phase 6 measurement baseline; the API v1.1 review now runs 129 tests. The additional API tests and GUI checks do not replace or rewrite those measurements.
+GUI section by Syed Muhammad Rayyan Hassan (24I-3000).
 
 | Review check | Configuration | Observed result |
 |---|---|---|
