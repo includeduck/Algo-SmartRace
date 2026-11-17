@@ -162,21 +162,23 @@ TEST(FixedRouteStrategy_NoMatchingDetour_FailsCleanly)
 
 TEST(ShortcutLoverStrategy_SubstitutesOpenShortcut)
 {
+    // start -> cp1 -> X -> finish, where X is a plain intersection: the
+    // shortcut cp1 -> finish bypasses only X, so it is legal.
     Graph g;
     int start = g.AddVertex(0, 0, VertexType::Start);
     int cp1 = g.AddVertex(10, 0, VertexType::Checkpoint, 1);
-    int cp2 = g.AddVertex(20, 0, VertexType::Checkpoint, 2);
+    int x = g.AddVertex(20, 5, VertexType::Intersection);
     int finish = g.AddVertex(30, 0, VertexType::Finish);
 
     g.AddEdge(start, cp1, 10.0, 1.0, 1.0, 1, false, false);
-    g.AddEdge(cp1, cp2, 10.0, 1.0, 1.0, 1, false, false);
-    g.AddEdge(cp2, finish, 10.0, 1.0, 1.0, 1, false, false);
-    int shortcutEdge = g.AddEdge(cp1, finish, 5.0, 1.0, 1.0, 5, true, false);   // skips cp2's position in the route
+    g.AddEdge(cp1, x, 11.2, 1.0, 1.0, 1, false, false);
+    g.AddEdge(x, finish, 11.2, 1.0, 1.0, 1, false, false);
+    int shortcutEdge = g.AddEdge(cp1, finish, 20.0, 1.0, 1.0, 5, true, false);
 
     DynArray<int> mainRoute;
     mainRoute.Push(start);
     mainRoute.Push(cp1);
-    mainRoute.Push(cp2);
+    mainRoute.Push(x);
     mainRoute.Push(finish);
 
     DynArray<io::DetourRule*> detours;
@@ -200,6 +202,87 @@ TEST(ShortcutLoverStrategy_SubstitutesOpenShortcut)
     CHECK_EQ(plan.vertexPath[1], finish);
     CHECK_EQ(plan.edgePath.Size(), 1);
     CHECK_EQ(plan.edgePath[0], shortcutEdge);
+}
+
+TEST(ShortcutLoverStrategy_NeverTakesAShortcutThatSkipsACheckpoint)
+{
+    // The shortcut cp1 -> finish would skip CP2: illegal (the lap would not
+    // count), so the main route through CP2 is kept.
+    Graph g;
+    int start = g.AddVertex(0, 0, VertexType::Start);
+    int cp1 = g.AddVertex(10, 0, VertexType::Checkpoint, 1);
+    int cp2 = g.AddVertex(20, 0, VertexType::Checkpoint, 2);
+    int finish = g.AddVertex(30, 0, VertexType::Finish);
+
+    g.AddEdge(start, cp1, 10.0, 1.0, 1.0, 1, false, false);
+    g.AddEdge(cp1, cp2, 10.0, 1.0, 1.0, 1, false, false);
+    g.AddEdge(cp2, finish, 10.0, 1.0, 1.0, 1, false, false);
+    int shortcutEdge = g.AddEdge(cp1, finish, 20.0, 1.0, 1.0, 5, true, false);
+
+    DynArray<int> mainRoute;
+    mainRoute.Push(start);
+    mainRoute.Push(cp1);
+    mainRoute.Push(cp2);
+    mainRoute.Push(finish);
+
+    DynArray<io::DetourRule*> detours;
+    DynArray<int> shortcuts;
+    shortcuts.Push(shortcutEdge);
+
+    StrategyContext context;
+    context.mainRoute = &mainRoute;
+    context.detours = &detours;
+    context.shortcutPreference = &shortcuts;
+    context.finishVertex = finish;
+    context.costReferences = ComputeReferences(g);
+
+    ShortcutLoverStrategy strategy;
+    model::Racer racer = MakeRacer(cp1, 2);
+    StrategyPlan plan = strategy.PlanRoute(g, racer, context);
+
+    CHECK(plan.found);
+    CHECK_EQ(plan.vertexPath.Size(), 3);
+    CHECK_EQ(plan.vertexPath[1], cp2);
+}
+
+TEST(FixedRouteStrategy_MainRouteWithClosingRepeat_LoopsFromFinish)
+{
+    // A MAINROUTE that closes its loop by repeating Start at the end, asked
+    // for a full lap while standing at the Finish -- the Phase 2 bug
+    // emitted Start twice in a row here and the whole plan failed.
+    Graph g;
+    int start = g.AddVertex(0, 0, VertexType::Start);
+    int cp1 = g.AddVertex(10, 0, VertexType::Checkpoint, 1);
+    int finish = g.AddVertex(5, 8, VertexType::Finish);
+    g.AddEdge(start, cp1, 10.0, 1.0, 1.0, 1, false, false);
+    g.AddEdge(cp1, finish, 9.5, 1.0, 1.0, 1, false, false);
+    g.AddEdge(finish, start, 9.5, 1.0, 1.0, 1, false, false);
+
+    DynArray<int> mainRoute;
+    mainRoute.Push(start);
+    mainRoute.Push(cp1);
+    mainRoute.Push(finish);
+    mainRoute.Push(start);   // explicit closing repeat
+
+    DynArray<io::DetourRule*> detours;
+    DynArray<int> shortcuts;
+
+    StrategyContext context;
+    context.mainRoute = &mainRoute;
+    context.detours = &detours;
+    context.shortcutPreference = &shortcuts;
+    context.finishVertex = finish;
+    context.costReferences = ComputeReferences(g);
+
+    FixedRouteStrategy strategy;
+    model::Racer racer = MakeRacer(finish, 1);
+    StrategyPlan plan = strategy.PlanRoute(g, racer, context);
+
+    CHECK(plan.found);
+    CHECK_EQ(plan.vertexPath.Size(), 4);   // finish -> start -> cp1 -> finish
+    CHECK_EQ(plan.vertexPath[1], start);
+    CHECK_EQ(plan.vertexPath[2], cp1);
+    CHECK_EQ(plan.edgePath.Size(), 3);
 }
 
 TEST(ShortcutLoverStrategy_FallsBackWhenShortcutClosed)

@@ -35,14 +35,13 @@ namespace sim
     // same track, event sequence and starting conditions -- every strategy
     // below is a pure function of (graph, racer, context), nothing random.
     //
-    // Refuelling (the "Refuelling" column) is intentionally NOT about
-    // detouring out of the way to reach a station: Act 3's DP/greedy
-    // resource planner (Phase 3) is what decides whether a detour is worth
-    // it. Here, an opponent only refuels opportunistically when its normal
-    // route already passes through an active station while it is low —
-    // the shared default below ("first eligible station below 25%, buy up
-    // to the max purchase") matches all three opponents' refuelling rule
-    // in the brief's table; only their ROUTE differs.
+    // Refuelling (the brief's "Refuelling" column): the race engine decides
+    // WHEN a racer must refuel (below 25% of the tank, or not enough fuel
+    // for the rest of its planned route) and routes it to a station via
+    // sim/ResourcePlanner -- the first eligible station on its own route
+    // for Opponents 1 and 2, the nearest reachable one for Opponent 3. A
+    // strategy only says HOW MUCH to buy once stopped; the shared default
+    // below buys the maximum allowed per stop for all three.
     class IStrategy
     {
     public:

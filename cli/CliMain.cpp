@@ -1,8 +1,11 @@
 // smartrace_cli: headless driver and API usage sample.
 //
-// Phase 2 demo: after the Phase 1 route-planning printout, runs a full
-// deterministic race on the first circuit (1 human on autopilot + 3
-// opponents) to completion, printing the event log and final standings.
+// Phase 3 demo:
+//   1. per circuit: track info, Dijkstra vs A* lap costs, route comparison,
+//      the refuelling DP's plan and the pickup knapsack (DP vs greedy);
+//   2. a full championship (C1 -> C2 -> C3), printing each race's event
+//      log and results, then the standings by Merge, Quick and Heap Sort
+//      and the top 3 by the size-k heap.
 #include "../src/api/SmartRaceApi.h"
 
 #include <cstdio>
@@ -21,18 +24,6 @@ namespace
         }
     }
 
-    void PrintRoute(const char* label, const RouteView& route)
-    {
-        if (!route.found)
-        {
-            printf("    %-10s NOT FOUND (blocked leg %d)\n", label, route.blockedLegIndex);
-            return;
-        }
-        printf("    %-10s cost=%7.3f  dist=%7.1f  time=%6.2fs  fuel=%6.2f  (%d vertices)\n",
-            label, route.totalCost, route.totalDistance, route.totalTime, route.totalFuel,
-            route.vertexPath.count);
-    }
-
     const char* StatusName(int status)
     {
         switch (status)
@@ -43,84 +34,82 @@ namespace
             default: return "?";
         }
     }
-}
 
-int main()
-{
-    ApiStatus status = ApiInit("data");
-    if (status != ApiStatus::Ok)
+    const char* SortName(SortMethod m)
     {
-        printf("ApiInit failed: %s\n", ApiLastError());
-        return 1;
+        switch (m)
+        {
+            case SortMethod::Quick: return "Quick";
+            case SortMethod::Heap: return "Heap";
+            case SortMethod::Merge:
+            default: return "Merge";
+        }
     }
 
-    int circuitCount = ApiCircuitCount();
-    printf("Circuits available: %d\n\n", circuitCount);
+    int LapOrDash(int ms)
+    {
+        return (ms >= 0x7fffffff) ? -1 : ms;
+    }
 
-    for (int c = 0; c < circuitCount; ++c)
+    void PrintExplorer(int circuit)
     {
         printf("================================================================\n");
-        printf("[%d] %s\n", c, ApiCircuitName(c));
+        printf("[%d] %s\n", circuit, ApiCircuitName(circuit));
 
-        status = ApiLoadCircuit(c);
-        if (status != ApiStatus::Ok)
+        if (ApiLoadCircuit(circuit) != ApiStatus::Ok)
         {
             printf("  ApiLoadCircuit failed: %s\n", ApiLastError());
-            continue;
+            return;
         }
 
         TrackInfo info = ApiGetTrackInfo();
-        printf("  vertices=%d edges=%d laps=%d checkpoints=%d shortcuts=%d cycle=%s deadEnd=%s validator=%s\n",
-            info.vertexCount, info.edgeCount, info.laps, info.mandatoryCheckpointCount, info.shortcutCount,
-            info.hasCycle ? "yes" : "no", info.hasDeadEnd ? "yes" : "no",
-            info.validatorPassed ? "pass" : "FAIL");
+        printf("  vertices=%d edges=%d checkpoints=%d shortcuts=%d cycle=%s deadEnd=%s validator=%s\n",
+            info.vertexCount, info.edgeCount, info.mandatoryCheckpointCount, info.shortcutCount,
+            info.hasCycle ? "yes" : "no", info.hasDeadEnd ? "yes" : "no", info.validatorPassed ? "pass" : "FAIL");
 
-        ComponentsView components = ApiRunDfsComponents();
-        printf("  connected components: %d\n", components.componentCount);
-
-        DeadEndsView deadEnds = ApiRunDeadEnds();
-        printf("  dead-end vertices: %d\n", deadEnds.deadEndVertices.count);
-
-        printf("\n  Full-lap route plans (Start -> every checkpoint in order -> Finish):\n");
+        printf("  Full lap, Dijkstra vs A* (cost must match):\n");
         Preset presets[4] = { Preset::Balanced, Preset::Speed, Preset::Economy, Preset::Safety };
         for (int p = 0; p < 4; ++p)
         {
-            RouteView dijkstra = ApiPlanLap(presets[p], RouteAlgo::Dijkstra);
-            RouteView astar = ApiPlanLap(presets[p], RouteAlgo::AStar);
-
-            printf("  Preset: %s\n", PresetName(presets[p]));
-            PrintRoute("Dijkstra", dijkstra);
-            PrintRoute("A*", astar);
+            RouteView d = ApiPlanLap(presets[p], RouteAlgo::Dijkstra);
+            RouteView a = ApiPlanLap(presets[p], RouteAlgo::AStar);
+            printf("    %-9s dijkstra=%7.3f  a*=%7.3f  dist=%6.0f time=%5.1fs fuel=%5.1f\n",
+                PresetName(presets[p]), d.totalCost, a.totalCost, d.totalDistance, d.totalTime, d.totalFuel);
         }
 
         RouteCompareView compare = ApiCompareRoutes(Preset::Balanced);
-        printf("\n  Route comparison (Start -> Finish, %d candidates):\n", compare.candidates.count);
+        printf("  Start -> Finish candidates (scored as Balanced):\n");
         for (int i = 0; i < compare.candidates.count; ++i)
         {
-            const RouteCandidateView& cand = compare.candidates[i];
-            printf("    %-14s cost=%7.3f dist=%7.1f time=%6.2fs fuel=%6.2f\n",
-                cand.label, cand.totalCost, cand.totalDistance, cand.totalTime, cand.totalFuel);
+            const RouteCandidateView& c = compare.candidates[i];
+            printf("    %-14s cost=%6.3f dist=%6.0f time=%5.1fs\n", c.label, c.totalCost, c.totalDistance, c.totalTime);
         }
 
+        RefuelView refuel = ApiPlanRefuel(Preset::Balanced);
+        printf("  Refuelling DP over the whole race (Balanced route): %s",
+            refuel.feasible ? "feasible" : "INFEASIBLE without a station detour");
+        if (refuel.feasible) printf(", %d stop(s), %.1fs stopped", refuel.stopCount, refuel.totalStopTimeMs / 1000.0);
         printf("\n");
+
+        PickupView pickups = ApiPlanPickups(Preset::Balanced, 150);
+        printf("  Pickups within a 15.0s detour budget (fuel needed: %s, DP filled %lld cells):\n",
+            pickups.fuelNeeded ? "yes" : "no", pickups.dpStates);
+        for (int i = 0; i < pickups.items.count; ++i)
+        {
+            const PickupItemView& item = pickups.items[i];
+            printf("    V%-3d %-6s cost=%4d benefit=%4d  dp=%s greedy=%s\n", item.vertex,
+                item.isNitro ? "nitro" : "fuel", item.costTenthsSec, item.benefitTenthsSec,
+                item.chosenByDp ? "take" : "-", item.chosenByGreedy ? "take" : "-");
+        }
+        printf("    DP benefit=%d (cost %d)   greedy benefit=%d (cost %d)\n\n",
+            pickups.dpBenefit, pickups.dpCost, pickups.greedyBenefit, pickups.greedyCost);
     }
 
-    for (int c = 0; c < circuitCount; ++c)
+    void RunRaceToCompletion()
     {
-        printf("================================================================\n");
-        printf("Full race on circuit %d, %s (1 human autopilot + 3 opponents)...\n\n", c, ApiCircuitName(c));
-
-        ApiLoadCircuit(c);
-        status = ApiRaceStart();
-        if (status != ApiStatus::Ok)
-        {
-            printf("ApiRaceStart failed: %s\n", ApiLastError());
-            continue;
-        }
-
         int lastLogIndex = -1;
         int ticks = 0;
-        const int kMaxTicks = 20 * 60 * 60 * 50;   // generous cap
+        const int kMaxTicks = 20 * 60 * 60 * 50;
         while (!ApiRaceOver() && ticks < kMaxTicks)
         {
             ApiRaceStep(1);
@@ -133,19 +122,96 @@ int main()
                 lastLogIndex = log.lines[i].index;
             }
         }
+        printf("  Race over at t=%dms (%d ticks)\n", ApiRaceSnapshot().timeMs, ticks);
+    }
 
-        printf("\nRace over at t=%dms after %d ticks.\n\n", ApiRaceSnapshot().timeMs, ticks);
+    void PrintStandings()
+    {
+        SortMethod methods[3] = { SortMethod::Merge, SortMethod::Quick, SortMethod::Heap };
+        for (int m = 0; m < 3; ++m)
+        {
+            StandingsView s = ApiStandings(methods[m]);
+            printf("  %-5s sort: %3lld comparisons, %3lld moves/swaps |", SortName(methods[m]), s.comparisons, s.swaps);
+            for (int i = 0; i < s.rows.count; ++i) printf(" %s", s.rows[i].name);
+            printf("\n");
+        }
 
-        printf("Final standings:\n");
+        StandingsView s = ApiStandings(SortMethod::Merge);
+        printf("  All three sorts agree: %s\n", s.allMethodsAgree ? "yes" : "NO");
+        for (int i = 0; i < s.rows.count; ++i)
+        {
+            const StandingRowView& r = s.rows[i];
+            printf("    %d. %-8s %3d pts  wins=%d  sumPos=%2d  bestLap=%6dms\n",
+                r.position, r.name, r.totalPoints, r.wins, r.sumOfFinishPositions, LapOrDash(r.bestFastestLapMs));
+        }
+
+        TopKView top = ApiTopK(3);
+        printf("  Top 3 via size-k heap (%lld comparisons vs %lld for a full Merge Sort, matches prefix: %s):",
+            top.comparisons, top.fullSortComparisons, top.matchesSortPrefix ? "yes" : "NO");
+        for (int i = 0; i < top.rows.count; ++i) printf(" %s", top.rows[i].name);
+        printf("\n");
+    }
+}
+
+int main()
+{
+    if (ApiInit("data") != ApiStatus::Ok)
+    {
+        printf("ApiInit failed: %s\n", ApiLastError());
+        return 1;
+    }
+
+    for (int c = 0; c < ApiCircuitCount(); ++c) PrintExplorer(c);
+
+    printf("================================================================\n");
+    printf("CHAMPIONSHIP: 1 human (autopilot) + 3 opponents, circuits 0 -> 1 -> 2\n");
+
+    if (ApiChampionshipStart() != ApiStatus::Ok)
+    {
+        printf("ApiChampionshipStart failed: %s\n", ApiLastError());
+        return 1;
+    }
+
+    for (;;)
+    {
+        ChampionshipStatus status = ApiChampionshipGetStatus();
+        if (status.complete) break;
+
+        printf("\n--- Race %d of %d: %s ---\n", status.racesCompleted + 1, status.racesTotal,
+            ApiCircuitName(status.currentCircuitIndex));
+
+        if (ApiRaceStart() != ApiStatus::Ok)
+        {
+            printf("ApiRaceStart failed: %s\n", ApiLastError());
+            break;
+        }
+        RunRaceToCompletion();
+
         ResultsView results = ApiRaceResults();
+        printf("  Results:\n");
         for (int i = 0; i < results.rows.count; ++i)
         {
             const ResultRowView& r = results.rows[i];
-            printf("  P%-2d racer=%-2d status=%-10s finishTime=%6dms bestLap=%6dms points=%2d (+%d bonus)\n",
-                r.finishPosition, r.racerId, StatusName(r.status), r.finishTimeMs,
-                (r.bestLapTimeMs >= 0x7fffffff) ? -1 : r.bestLapTimeMs, r.pointsAwarded, r.bonusPoints);
+            printf("    P%d racer %d  %-9s time=%6dms bestLap=%6dms points=%2d%s\n", r.finishPosition, r.racerId,
+                StatusName(r.status), r.finishTimeMs, LapOrDash(r.bestLapTimeMs), r.pointsAwarded,
+                r.bonusPoints > 0 ? " (incl. fastest-lap bonus)" : "");
         }
-        printf("\n");
+
+        if (ApiChampionshipNextRace() != ApiStatus::Ok)
+        {
+            printf("ApiChampionshipNextRace failed: %s\n", ApiLastError());
+            break;
+        }
+
+        printf("  Standings after race %d:\n", ApiChampionshipGetStatus().racesCompleted);
+        PrintStandings();
+    }
+
+    ChampionshipStatus final = ApiChampionshipGetStatus();
+    if (final.complete)
+    {
+        StandingsView s = ApiStandings(SortMethod::Merge);
+        printf("\nCHAMPION: %s (racer %d)\n", s.rows.count > 0 ? s.rows[0].name : "?", final.championId);
     }
 
     ApiShutdown();

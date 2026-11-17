@@ -56,6 +56,14 @@ cli/         headless driver / API usage sample
 tests/       unit + integration tests (TEST()/CHECK() framework)
 bench/       the 5 required experiments (added in a later phase)
 data/        rules.cfg and the .trk circuit files
+tools/       gen_circuits.py -- authoring aid that generates and validates
+             data/circuits/*.trk (Python; not part of the game or its build)
+```
+
+To regenerate the circuits after editing their design:
+
+```bash
+python tools/gen_circuits.py
 ```
 
 ## Coding rules

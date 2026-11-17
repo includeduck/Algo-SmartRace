@@ -247,3 +247,97 @@ struct LogView
 {
     ArrayView<LogLineView> lines;
 };
+
+// ---------------------------------------------------------------------- //
+// Resource planning (Explorer "Resources" tab) — added in Phase 3
+// ---------------------------------------------------------------------- //
+
+struct PickupItemView
+{
+    int vertex;
+    bool isNitro;              // false = fuel station
+    int costTenthsSec;          // detour time (+ stop time for fuel), tenths of a second
+    int benefitTenthsSec;        // estimated time saved / penalty avoided, tenths of a second
+    double detourSeconds;
+    bool chosenByDp;
+    bool chosenByGreedy;
+};
+
+struct PickupView
+{
+    ArrayView<PickupItemView> items;
+    int budgetTenthsSec;
+    int dpBenefit, dpCost;
+    int greedyBenefit, greedyCost;
+    long long dpStates;        // table cells filled, for the "why DP costs O(mB)" display
+    bool fuelNeeded;             // true when the race's refuel plan is infeasible without a detour
+};
+
+struct RefuelStopView
+{
+    int vertex;
+    bool canBuy;            // an active station (stop 0 is where the racer stands)
+    int purchaseTenths;      // recommended purchase, 0 = drive through
+};
+
+struct RefuelView
+{
+    bool feasible;
+    int totalStopTimeMs;
+    int finalFuelTenths;
+    int stopCount;
+    ArrayView<RefuelStopView> stops;
+};
+
+// ---------------------------------------------------------------------- //
+// Championship dashboard (Screen 5) — added in Phase 3
+// ---------------------------------------------------------------------- //
+
+struct StandingRowView
+{
+    int position;
+    int racerId;
+    const char* name;
+    int totalPoints;
+    int wins;
+    int sumOfFinishPositions;
+    int bestFastestLapMs;     // INT_MAX if no lap completed yet
+};
+
+struct StandingsView
+{
+    ArrayView<StandingRowView> rows;
+    long long comparisons;     // for the method that produced `rows`
+    long long swaps;
+    double micros;
+    bool allMethodsAgree;       // Merge == Quick == Heap
+};
+
+struct TopKView
+{
+    ArrayView<StandingRowView> rows;
+    long long comparisons;          // size-k heap
+    long long fullSortComparisons;    // Merge Sort of all entries, for comparison
+    bool matchesSortPrefix;
+};
+
+struct ChampionshipStatus
+{
+    bool active;
+    int racesCompleted;
+    int racesTotal;
+    int currentCircuitIndex;     // circuit of the race to run next (or the last one, once complete)
+    bool complete;
+    int championId;               // -1 until complete
+};
+
+// Which criterion separates two racers in the standings (ApiTieBreakReason).
+enum class TieBreak
+{
+    Points,
+    Wins,
+    SumOfFinishPositions,
+    BestFastestLap,
+    RacerId,
+    SameRacer,
+};

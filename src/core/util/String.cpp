@@ -70,8 +70,14 @@ void String::EnsureCapacity(int needed)
     if (newCap < needed) newCap = needed;
 
     char* newData = new char[newCap];
-    if (m_data != nullptr) StrCopy(newData, newCap, m_data);
-    else newData[0] = '\0';
+    if (m_data != nullptr)
+    {
+        StrCopy(newData, newCap, m_data);
+    }
+    else
+    {
+        newData[0] = '\0';
+    }
 
     delete[] m_data;
     m_data = newData;

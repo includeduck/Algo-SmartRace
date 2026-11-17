@@ -55,8 +55,14 @@ public:
             LinkedListNode<T>* next = cur->next;
             if (pred(cur->value))
             {
-                if (prev == nullptr) m_head = next;
-                else prev->next = next;
+                if (prev == nullptr)
+                {
+                    m_head = next;
+                }
+                else
+                {
+                    prev->next = next;
+                }
                 delete cur;
                 --m_count;
                 removedAny = true;

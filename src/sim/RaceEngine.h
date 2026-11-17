@@ -78,6 +78,11 @@ namespace sim
             return m_lastCommandError;
         }
 
+        // How many fuel tenths the refuelling DP recommends the human buy
+        // at the station they are stopped at (0 if not at an active
+        // station, or if the rest of the race needs no purchase here).
+        int RecommendedRefuel() const;
+
         const Log& EventLog() const
         {
             return m_log;
@@ -106,6 +111,13 @@ namespace sim
         void ApplyRecoveryCheck(model::Racer& racer, int index);
         void EnterWaiting(model::Racer& racer, const char* reason);
         void BeginRefuel(model::Racer& racer, int amountTenths);
+        void StorePlan(model::Racer& racer, const DynArray<int>& vertices, const DynArray<int>& edges);
+
+        // Short of fuel: an opponent below 25% of the tank, or anyone whose
+        // remaining planned route needs more fuel than is in the tank.
+        bool NeedsFuel(const model::Racer& racer) const;
+        bool PlanReachesStation(const model::Racer& racer) const;
+        int RecommendedRefuelFor(const model::Racer& racer) const;
         void InvalidateStalePlans();
         void CheckRaceOverConditions();
 

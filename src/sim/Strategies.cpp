@@ -6,9 +6,8 @@ namespace sim
 {
     int IStrategy::RefuelAmount(const model::Racer& racer) const
     {
-        double threshold = Rules::kMaxFuelTenths * Rules::kOpponentLowFuelThreshold;
-        if (racer.fuelTenths < threshold) return Rules::kMaxStationPurchaseTenths;
-        return -1;
+        (void)racer;   // every opponent fills up as much as one stop allows
+        return Rules::kMaxStationPurchaseTenths;
     }
 
     namespace
@@ -50,7 +49,12 @@ namespace sim
             for (int step = 1; step <= n; ++step)
             {
                 int idx = (fromIdx + step) % n;
-                outVertices->Push(mainRoute[idx]);
+
+                // A MAINROUTE may close its loop by repeating its first
+                // vertex at the end; wrapping around would then emit that
+                // vertex twice in a row -- a "pair" with no edge, which
+                // made the whole plan fail. Consecutive repeats collapse.
+                if (mainRoute[idx] != outVertices->Back()) outVertices->Push(mainRoute[idx]);
                 if (mainRoute[idx] == toVertex) return true;
             }
             return false;
@@ -192,6 +196,17 @@ namespace sim
                         }
                     }
                     if (laterIdx <= i + 1) continue;   // not a real shortcut forward, skip
+
+                    // Legal only if it skips no mandatory checkpoint
+                    // (Project.pdf section 4.2: skipping one does not
+                    // complete the lap, so the racer would have to come
+                    // back for it -- that is not a shortcut).
+                    bool skipsCheckpoint = false;
+                    for (int k = i + 1; k < laterIdx && !skipsCheckpoint; ++k)
+                    {
+                        if (graph.GetVertex(vertices[k]).checkpointOrder >= 0) skipsCheckpoint = true;
+                    }
+                    if (skipsCheckpoint) continue;
 
                     DynArray<int> spliced;
                     for (int k = 0; k <= i; ++k) spliced.Push(vertices[k]);

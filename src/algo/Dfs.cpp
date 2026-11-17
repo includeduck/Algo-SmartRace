@@ -515,9 +515,18 @@ namespace algo
             bool finishInY = (finish >= 0 && finish < n) ? sideY[finish] : false;
 
             const DynArray<bool>* deadSide = nullptr;
-            if (finishInX && !finishInY) deadSide = &sideY;
-            else if (finishInY && !finishInX) deadSide = &sideX;
-            else continue;
+            if (finishInX && !finishInY)
+            {
+                deadSide = &sideY;
+            }
+            else if (finishInY && !finishInX)
+            {
+                deadSide = &sideX;
+            }
+            else
+            {
+                continue;
+            }
 
             bool hasMandatory = false;
             for (int v = 0; v < n && !hasMandatory; ++v)

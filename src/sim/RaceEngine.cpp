@@ -1,5 +1,8 @@
 #include "RaceEngine.h"
+#include "ResourcePlanner.h"
 #include "../algo/RoutePlanner.h"
+#include "../algo/Comparators.h"
+#include "../algo/Sorting.h"
 #include "../model/Rules.h"
 #include "../core/util/String.h"
 #include "../core/util/MathUtil.h"
@@ -49,42 +52,6 @@ namespace sim
                 return true;
             }
             return false;
-        }
-
-        int UnfinishedLapsCompleted(const model::Racer& racer)
-        {
-            return racer.lap - 1;
-        }
-
-        // Finish-order comparator (Project.pdf sections 4.2.7-8): finished
-        // racers first (by finish time, then id); unfinished racers after,
-        // by laps completed, then checkpoints completed this lap, then
-        // elapsed active-driving time (lower = reached the same progress
-        // more efficiently), then id. Returns <0 if `a` ranks before `b`.
-        int CompareFinish(const model::Racer& a, const model::Racer& b)
-        {
-            bool aFinished = (a.state == model::RacerState::Finished);
-            bool bFinished = (b.state == model::RacerState::Finished);
-
-            if (aFinished && bFinished)
-            {
-                if (a.finishTimeMs != b.finishTimeMs) return (a.finishTimeMs < b.finishTimeMs) ? -1 : 1;
-                return (a.id < b.id) ? -1 : ((a.id > b.id) ? 1 : 0);
-            }
-            if (aFinished != bFinished) return aFinished ? -1 : 1;
-
-            int aLaps = UnfinishedLapsCompleted(a);
-            int bLaps = UnfinishedLapsCompleted(b);
-            if (aLaps != bLaps) return (aLaps > bLaps) ? -1 : 1;
-
-            if (a.checkpointsCompletedThisLap != b.checkpointsCompletedThisLap)
-            {
-                return (a.checkpointsCompletedThisLap > b.checkpointsCompletedThisLap) ? -1 : 1;
-            }
-
-            if (a.totalTimeMs != b.totalTimeMs) return (a.totalTimeMs < b.totalTimeMs) ? -1 : 1;
-
-            return (a.id < b.id) ? -1 : ((a.id > b.id) ? 1 : 0);
         }
     }
 
@@ -190,6 +157,8 @@ namespace sim
             racer.currentTargetVertex = -1;
             racer.edgeProgress = 0.0;
             racer.fuelTenths = Rules::kMaxFuelTenths;
+            racer.fuelRemainder = 0.0;
+            racer.refuelledAtVertex = -1;
             racer.nitroCharges = Rules::kDefaultStartNitroCharges;
             racer.nitroActive = false;
             racer.nitroTimeLeftMs = 0;
@@ -462,8 +431,7 @@ namespace sim
 
     int RaceEngine::EdgeFuelTenthsNeeded(int edgeId) const
     {
-        double fuelUnits = model::EdgeFuelNeed(*m_graph, edgeId);
-        return static_cast<int>(fuelUnits * 10.0 + 0.5);
+        return EdgeFuelTenths(*m_graph, edgeId);   // the one fuel rule, shared with the planner
     }
 
     void RaceEngine::AdvanceOnEdge(model::Racer& racer, int index)
@@ -473,11 +441,22 @@ namespace sim
         double dtSec = Rules::kSimStepMs / 1000.0;
         double progressDelta = (edge.distance > 0.0) ? (speed * dtSec / edge.distance) : 1.0;
 
+        // Fuel is charged in proportion to the distance actually covered:
+        // the final tick usually overshoots 1.0, and that overshoot is not
+        // charged. Each tick's share is a small fraction of a tenth, so it
+        // is accumulated in fuelRemainder and only whole tenths are
+        // deducted -- rounding every 20ms slice on its own (the Phase 2
+        // behaviour) rounded most slices to zero and barely drained the
+        // tank at all. The arithmetic is identical every run, so this stays
+        // deterministic.
+        double coveredFraction = MathUtil::Min(progressDelta, 1.0 - racer.edgeProgress);
         double fuelForWholeEdge = static_cast<double>(EdgeFuelTenthsNeeded(racer.currentEdge));
         double fuelMultiplier = racer.nitroActive ? Rules::kNitroFuelMultiplier : 1.0;
-        double fuelThisTick = fuelForWholeEdge * progressDelta * fuelMultiplier;
 
-        racer.fuelTenths -= static_cast<int>(fuelThisTick + 0.5);
+        racer.fuelRemainder += fuelForWholeEdge * coveredFraction * fuelMultiplier;
+        int wholeTenths = static_cast<int>(racer.fuelRemainder);
+        racer.fuelTenths -= wholeTenths;
+        racer.fuelRemainder -= wholeTenths;
         if (racer.fuelTenths < 0) racer.fuelTenths = 0;
 
         racer.edgeProgress += progressDelta;
@@ -567,10 +546,20 @@ namespace sim
                 racer.nitroCharges, Rules::kMaxNitroCharges);
         }
 
-        if (v.type == model::VertexType::FuelStation && v.active && !racer.isHuman
-            && racer.state == model::RacerState::AtVertex)
+        // Fuel: at most one purchase per visit (refuelledAtVertex), and the
+        // manual human only ever buys through CmdRefuel.
+        bool atStation = (v.type == model::VertexType::FuelStation && v.active);
+        bool alreadyBoughtHere = (racer.refuelledAtVertex == racer.currentVertex);
+        if (!atStation || alreadyBoughtHere || racer.state != model::RacerState::AtVertex) return;
+
+        if (!racer.isHuman)
         {
-            int amount = m_strategies[index]->RefuelAmount(racer);
+            if (NeedsFuel(racer)) BeginRefuel(racer, m_strategies[index]->RefuelAmount(racer));
+        }
+        else if (m_humanAutopilot)
+        {
+            int amount = RecommendedRefuelFor(racer);
+            if (amount <= 0 && NeedsFuel(racer)) amount = Rules::kMaxStationPurchaseTenths;
             if (amount > 0) BeginRefuel(racer, amount);
         }
     }
@@ -583,9 +572,94 @@ namespace sim
         if (buy <= 0) return;
 
         racer.fuelTenths += buy;
+        racer.refuelledAtVertex = racer.currentVertex;
         racer.state = model::RacerState::Refuelling;
         racer.refuelEndMs = m_nowMs + Rules::kStationStopTimeMs;
-        LogLine("%s refuelling: +%.1f units", racer.name, buy / 10.0);
+        LogLine("%s refuelling at V%d: +%.1f units", racer.name, racer.currentVertex, buy / 10.0);
+    }
+
+    bool RaceEngine::NeedsFuel(const model::Racer& racer) const
+    {
+        // Opponents follow the brief's rule: refuel below 25% of the tank.
+        double threshold = Rules::kMaxFuelTenths * Rules::kOpponentLowFuelThreshold;
+        if (!racer.isHuman && racer.fuelTenths < threshold) return true;
+
+        // Everyone: the rest of the planned route cannot be driven on the
+        // fuel in the tank.
+        int start = racer.plannedEdgeCursor;
+        int remaining = RouteFuelTenths(*m_graph, racer.plannedEdgePath + start, racer.plannedEdgePathLen - start);
+        return remaining > racer.fuelTenths;
+    }
+
+    bool RaceEngine::PlanReachesStation(const model::Racer& racer) const
+    {
+        // A station counts only if the racer can get there on the fuel in
+        // the tank: walk the plan edge by edge (edge e leads to vertex e+1)
+        // and give up as soon as the running fuel total exceeds the tank.
+        // Counting any station "somewhere ahead" let a racer drive past its
+        // last chance to detour and run dry short of a station.
+        int used = 0;
+        for (int e = racer.plannedEdgeCursor; e < racer.plannedEdgePathLen; ++e)
+        {
+            used += EdgeFuelTenths(*m_graph, racer.plannedEdgePath[e]);
+            if (used > racer.fuelTenths) return false;
+
+            const model::Vertex& v = m_graph->GetVertex(racer.plannedVertexPath[e + 1]);
+            if (v.type == model::VertexType::FuelStation && v.active) return true;
+        }
+        return false;
+    }
+
+    int RaceEngine::RecommendedRefuelFor(const model::Racer& racer) const
+    {
+        if (racer.currentVertex < 0) return 0;
+        const model::Vertex& v = m_graph->GetVertex(racer.currentVertex);
+        if (v.type != model::VertexType::FuelStation || !v.active) return 0;
+
+        int room = MathUtil::Min(Rules::kMaxFuelTenths - racer.fuelTenths, Rules::kMaxStationPurchaseTenths);
+        if (room <= 0) return 0;
+
+        // The refuelling DP over the WHOLE rest of the race from here: this
+        // station is stop 0 (a purchase is possible), then every station the
+        // racer's own route passes on the remaining laps.
+        DynArray<int> vertices;
+        DynArray<int> edges;
+        int lapsAfterThis = m_laps - racer.lap;
+        if (!BuildRaceRoute(*m_graph, racer.currentVertex, racer.nextCheckpoint - 1, lapsAfterThis,
+            m_finishVertex, m_humanWeights, m_costReferences, &vertices, &edges))
+        {
+            return room;
+        }
+
+        algo::RefuelProblem problem;
+        BuildRefuelProblem(*m_graph, vertices, edges, racer.fuelTenths, &problem);
+        algo::RefuelPlan plan = algo::PlanRefuelling(problem);
+
+        // Infeasible means no plan along this route reaches the finish:
+        // take as much as this stop allows and let later detours top up.
+        if (!plan.feasible) return room;
+        return (plan.purchase.Size() > 0) ? plan.purchase[0] : 0;
+    }
+
+    int RaceEngine::RecommendedRefuel() const
+    {
+        for (int i = 0; i < m_racers.Size(); ++i)
+        {
+            if (m_racers[i].isHuman) return RecommendedRefuelFor(m_racers[i]);
+        }
+        return 0;
+    }
+
+    void RaceEngine::StorePlan(model::Racer& racer, const DynArray<int>& vertices, const DynArray<int>& edges)
+    {
+        int vn = MathUtil::Min(vertices.Size(), model::kMaxPlannedPathLen);
+        for (int i = 0; i < vn; ++i) racer.plannedVertexPath[i] = vertices[i];
+        racer.plannedVertexPathLen = vn;
+
+        int en = MathUtil::Min(edges.Size(), model::kMaxPlannedPathLen);
+        for (int i = 0; i < en; ++i) racer.plannedEdgePath[i] = edges[i];
+        racer.plannedEdgePathLen = en;
+        racer.plannedEdgeCursor = 0;
     }
 
     bool RaceEngine::IsLegalEdgeFrom(int vertexId, int edgeId) const
@@ -620,6 +694,14 @@ namespace sim
         }
         else
         {
+            // Short of fuel with no station ahead on the current plan:
+            // discard it so ReplanRoute can route through a station.
+            bool hasPlan = racer.plannedEdgeCursor < racer.plannedEdgePathLen;
+            if (hasPlan && NeedsFuel(racer) && !PlanReachesStation(racer))
+            {
+                racer.plannedEdgeCursor = racer.plannedEdgePathLen;
+            }
+
             if (racer.plannedEdgeCursor >= racer.plannedEdgePathLen) ReplanRoute(racer, index);
 
             if (racer.plannedEdgeCursor >= racer.plannedEdgePathLen)
@@ -656,6 +738,7 @@ namespace sim
         racer.currentTargetVertex = target;
         racer.edgeProgress = 0.0;
         racer.currentVertex = -1;
+        racer.refuelledAtVertex = -1;   // leaving: the next station visit may buy again
         racer.state = model::RacerState::OnEdge;
 
         if (!manualHuman) ++racer.plannedEdgeCursor;
@@ -671,15 +754,7 @@ namespace sim
         {
             algo::PlanResult plan = algo::PlanLap(*m_graph, racer.currentVertex, racer.nextCheckpoint - 1,
                 m_finishVertex, m_humanWeights, m_costReferences, algo::RouteAlgo::Dijkstra);
-            if (!plan.found) return;
-
-            int vn = MathUtil::Min(plan.vertexPath.Size(), model::kMaxPlannedPathLen);
-            for (int i = 0; i < vn; ++i) racer.plannedVertexPath[i] = plan.vertexPath[i];
-            racer.plannedVertexPathLen = vn;
-
-            int en = MathUtil::Min(plan.edgePath.Size(), model::kMaxPlannedPathLen);
-            for (int i = 0; i < en; ++i) racer.plannedEdgePath[i] = plan.edgePath[i];
-            racer.plannedEdgePathLen = en;
+            if (plan.found) StorePlan(racer, plan.vertexPath, plan.edgePath);
         }
         else
         {
@@ -691,15 +766,33 @@ namespace sim
             context.costReferences = m_costReferences;
 
             StrategyPlan plan = m_strategies[index]->PlanRoute(*m_graph, racer, context);
-            if (!plan.found) return;
+            if (plan.found) StorePlan(racer, plan.vertexPath, plan.edgePath);
+        }
 
-            int vn = MathUtil::Min(plan.vertexPath.Size(), model::kMaxPlannedPathLen);
-            for (int i = 0; i < vn; ++i) racer.plannedVertexPath[i] = plan.vertexPath[i];
-            racer.plannedVertexPathLen = vn;
+        // Refuelling (Act 3 in gameplay, the brief's "Refuelling" column of
+        // section 4.4): if this plan cannot be driven on the fuel in the
+        // tank and passes no station, route through one first. Opponents 1
+        // and 2 take the first eligible station along their own route,
+        // Opponent 3 and the human autopilot the nearest reachable one. The
+        // station leg and the rest of the lap after it are planned with the
+        // human's preset (human) or by distance (opponents).
+        if (racer.plannedEdgePathLen == 0 || !NeedsFuel(racer) || PlanReachesStation(racer)) return;
 
-            int en = MathUtil::Min(plan.edgePath.Size(), model::kMaxPlannedPathLen);
-            for (int i = 0; i < en; ++i) racer.plannedEdgePath[i] = plan.edgePath[i];
-            racer.plannedEdgePathLen = en;
+        bool firstOnRoute = (racer.strategyType == model::StrategyType::FixedRoute
+            || racer.strategyType == model::StrategyType::ShortcutLover);
+        StationChoice choice = firstOnRoute ? StationChoice::FirstOnRoute : StationChoice::Nearest;
+        model::Weights weights = racer.isHuman ? m_humanWeights : model::WeightsForPreset(model::Preset::Distance);
+
+        DynArray<int> vertices;
+        DynArray<int> edges;
+        int station = -1;
+        if (PlanStationDetour(*m_graph, racer.currentVertex, racer.fuelTenths, racer.nextCheckpoint - 1,
+            m_finishVertex, weights, m_costReferences, choice, racer.plannedVertexPath,
+            racer.plannedVertexPathLen, &vertices, &edges, &station))
+        {
+            StorePlan(racer, vertices, edges);
+            LogLine("%s low on fuel (%.1f units): heading to station V%d", racer.name,
+                racer.fuelTenths / 10.0, station);
         }
     }
 
@@ -739,8 +832,14 @@ namespace sim
             racer.state = model::RacerState::AtVertex;
             TryStartNextEdge(racer, index);
 
-            if (racer.state == model::RacerState::Waiting) racer.waitingStartMs = savedWaitingStart;
-            else if (racer.state != model::RacerState::AtVertex) return;   // moving again (OnEdge/Refuelling)
+            if (racer.state == model::RacerState::Waiting)
+            {
+                racer.waitingStartMs = savedWaitingStart;
+            }
+            else if (racer.state != model::RacerState::AtVertex)
+            {
+                return;   // moving again (OnEdge/Refuelling)
+            }
         }
 
         if (racer.state == model::RacerState::Waiting
@@ -921,29 +1020,17 @@ namespace sim
         outResults->Clear();
 
         int n = m_racers.Size();
-        DynArray<int> order;
-        for (int i = 0; i < n; ++i) order.Push(i);
 
-        // Small n (<=10): a hand-rolled insertion sort using the shared
-        // comparator is simpler here than pulling in Act 5's sorting
-        // module from the race engine. Phase 3 routes CHAMPIONSHIP
-        // standings specifically through Merge/Quick/Heap sort; this is
-        // only this one race's finish order.
-        for (int i = 1; i < order.Size(); ++i)
-        {
-            int key = order[i];
-            int j = i - 1;
-            while (j >= 0 && CompareFinish(m_racers[order[j]], m_racers[key]) > 0)
-            {
-                order[j + 1] = order[j];
-                --j;
-            }
-            order[j + 1] = key;
-        }
+        // Finish order: Merge Sort (stable, the primary ranking method) with
+        // the shared finish comparator, over pointers -- a Racer carries its
+        // whole planned path, so copying them to sort would be wasteful.
+        DynArray<const model::Racer*> order;
+        for (int i = 0; i < n; ++i) order.Push(&m_racers[i]);
+        algo::MergeSort<const model::Racer*, algo::FinishOrderPtr>(order.Data(), order.Size());
 
         for (int rank = 0; rank < n; ++rank)
         {
-            const model::Racer& racer = m_racers[order[rank]];
+            const model::Racer& racer = *order[rank];
             model::RaceResultRow row;
             row.racerId = racer.id;
             row.finishPosition = rank + 1;
@@ -953,7 +1040,7 @@ namespace sim
             row.pointsAwarded = 0;
             row.status = (racer.state == model::RacerState::Finished) ? model::RaceStatus::Finished
                 : (racer.state == model::RacerState::Dnf) ? model::RaceStatus::Dnf : model::RaceStatus::TimeLimit;
-            row.lapsCompleted = UnfinishedLapsCompleted(racer) + (row.status == model::RaceStatus::Finished ? 1 : 0);
+            row.lapsCompleted = (racer.lap - 1) + (row.status == model::RaceStatus::Finished ? 1 : 0);
             row.checkpointsCompletedInFinalLap = racer.checkpointsCompletedThisLap;
             outResults->Push(row);
         }

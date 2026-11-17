@@ -155,38 +155,150 @@ TEST(RaceEngine_RoadClosure_ReroutesWithoutRestartingRace)
     delete g;
 }
 
-TEST(RaceEngine_InsufficientFuel_LeadsToDnfAfterTimeout)
+namespace
 {
-    io::TrackData trackData;
-    Graph* g = BuildLoop(&trackData);
-
-    RaceConfig config = DefaultConfig(5);   // many laps -- will run out of fuel with no station
-    RaceEngine engine;
-    engine.Start(g, trackData, config);
-
-    // No fuel stations on this tiny test loop, so eventually every racer
-    // must run out and wait, then DNF after the timeout.
-    int ticks = 0;
-    const int maxTicks = 20 * 60 * 60 * 50;   // generous cap (way more than needed)
-    while (!engine.IsRaceOver() && ticks < maxTicks)
+    // The same square loop, with a configurable fuel cost per road and an
+    // optional fuel station S off the Finish -> Start corner (joined to
+    // both, each spur costing 5 fuel units).
+    Graph* BuildFuelLoop(io::TrackData* trackData, double fuelPerRoad, bool withStation)
     {
-        engine.Step();
-        ++ticks;
+        Graph* g = new Graph();
+        int start = g->AddVertex(0, 0, VertexType::Start);
+        int cp1 = g->AddVertex(100, 0, VertexType::Checkpoint, 1);
+        int cp2 = g->AddVertex(100, 100, VertexType::Checkpoint, 2);
+        int finish = g->AddVertex(0, 100, VertexType::Finish);
+
+        g->AddEdge(start, cp1, 100.0, 2.0, fuelPerRoad, 1, false, false);
+        g->AddEdge(cp1, cp2, 100.0, 2.0, fuelPerRoad, 1, false, false);
+        g->AddEdge(cp2, finish, 100.0, 2.0, fuelPerRoad, 1, false, false);
+        g->AddEdge(finish, start, 100.0, 2.0, fuelPerRoad, 1, false, false);
+
+        if (withStation)
+        {
+            int station = g->AddVertex(-50, 50, VertexType::FuelStation);
+            g->AddEdge(finish, station, 71.0, 1.4, 5.0, 1, false, false);
+            g->AddEdge(station, start, 71.0, 1.4, 5.0, 1, false, false);
+        }
+
+        trackData->mainRoute.Push(start);
+        trackData->mainRoute.Push(cp1);
+        trackData->mainRoute.Push(cp2);
+        trackData->mainRoute.Push(finish);
+        trackData->mainRoute.Push(start);
+        return g;
     }
 
+    bool Contains(const char* text, const char* needle)
+    {
+        for (int i = 0; text[i] != '\0'; ++i)
+        {
+            int k = 0;
+            while (needle[k] != '\0' && text[i + k] == needle[k]) ++k;
+            if (needle[k] == '\0') return true;
+        }
+        return false;
+    }
+
+    bool LogMentions(const RaceEngine& engine, const char* needle)
+    {
+        LogEntry entries[512];
+        int n = engine.EventLog().Since(-1, entries, 512);
+        for (int i = 0; i < n; ++i)
+        {
+            if (Contains(entries[i].text, needle)) return true;
+        }
+        return false;
+    }
+}
+
+TEST(RaceEngine_FuelActuallyDrains_ByTheEdgeRule)
+{
+    // Three roads of 20.0 fuel units each = 600 tenths for one lap. A
+    // regression guard for the Phase 2 bug where each 20ms slice was
+    // rounded to a whole tenth on its own and the tank barely drained.
+    io::TrackData trackData;
+    Graph* g = BuildFuelLoop(&trackData, 20.0, false);
+
+    RaceConfig config = DefaultConfig(1);
+    config.opponentCount = 0;
+    RaceEngine engine;
+    engine.Start(g, trackData, config);
+    RunToCompletion(&engine);
+
+    const Racer& human = engine.GetRacer(0);
+    CHECK(human.state == RacerState::Finished);
+    CHECK(human.fuelTenths >= 399 && human.fuelTenths <= 401);
+
+    delete g;
+}
+
+TEST(RaceEngine_InsufficientFuel_NoStation_EveryoneDnfs)
+{
+    // 40.0 units per road: the third road of lap 1 cannot be entered with
+    // the 20.0 left, and there is no station, so every racer waits and
+    // then DNFs after the recovery timeout.
+    io::TrackData trackData;
+    Graph* g = BuildFuelLoop(&trackData, 40.0, false);
+
+    RaceEngine engine;
+    engine.Start(g, trackData, DefaultConfig(1));
+    RunToCompletion(&engine);
+
     CHECK(engine.IsRaceOver());
+    DynArray<RaceResultRow> results;
+    engine.GetResults(&results);
+    for (int i = 0; i < results.Size(); ++i) CHECK(results[i].status == RaceStatus::Dnf);
+    CHECK(LogMentions(engine, "DNF"));
+
+    delete g;
+}
+
+TEST(RaceEngine_LowFuel_DetoursToStation_RefuelsAndFinishes)
+{
+    // 20.0 units per road: lap 1 costs 600 of the 1000 tenths, lap 2 needs
+    // 800 more. Nobody can finish 2 laps on one tank -- every racer (the
+    // human autopilot and all three opponent strategies) must detour to
+    // the station, buy fuel, and still finish.
+    io::TrackData trackData;
+    Graph* g = BuildFuelLoop(&trackData, 20.0, true);
+
+    RaceEngine engine;
+    engine.Start(g, trackData, DefaultConfig(2));
+    RunToCompletion(&engine);
 
     DynArray<RaceResultRow> results;
     engine.GetResults(&results);
-    bool anyDnfOrFinished = false;
-    for (int i = 0; i < results.Size(); ++i)
+    CHECK_EQ(results.Size(), 4);
+    for (int i = 0; i < results.Size(); ++i) CHECK(results[i].status == RaceStatus::Finished);
+
+    CHECK(LogMentions(engine, "heading to station"));
+    CHECK(LogMentions(engine, "refuelling at V4"));
+
+    delete g;
+}
+
+TEST(RaceEngine_RaceResults_OrderedByFinishTime)
+{
+    io::TrackData trackData;
+    Graph* g = BuildFuelLoop(&trackData, 2.0, false);
+
+    RaceEngine engine;
+    engine.Start(g, trackData, DefaultConfig(2));
+    RunToCompletion(&engine);
+
+    DynArray<RaceResultRow> results;
+    engine.GetResults(&results);
+    for (int i = 1; i < results.Size(); ++i)
     {
-        if (results[i].status == RaceStatus::Dnf || results[i].status == RaceStatus::Finished)
+        const RaceResultRow& a = results[i - 1];
+        const RaceResultRow& b = results[i];
+        CHECK_EQ(b.finishPosition, a.finishPosition + 1);
+        if (a.status == RaceStatus::Finished && b.status == RaceStatus::Finished)
         {
-            anyDnfOrFinished = true;
+            // Earlier finish first; an exact tie is broken by lower racer id.
+            CHECK(a.finishTimeMs < b.finishTimeMs || (a.finishTimeMs == b.finishTimeMs && a.racerId < b.racerId));
         }
     }
-    CHECK(anyDnfOrFinished);
 
     delete g;
 }

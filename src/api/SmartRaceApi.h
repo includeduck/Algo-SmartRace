@@ -38,12 +38,17 @@
 //     checkpoint/lap tracking, the 3 opponent strategies, the recovery
 //     policy) — their signatures are unchanged from v0.1's stub. Added
 //     human commands (ApiCmdChooseEdge/Nitro/Refuel/Autopilot/Preset),
-//     ApiRaceResults and ApiRaceLogSince. Resource planning, championship
-//     and the Algorithm Lab are added in later phases as pure ADDITIONS to
-//     this header. API freeze: 29 Nov 2026.
+//     ApiRaceResults and ApiRaceLogSince.
+//   v0.4 (Phase 3): resource planning (ApiPlanPickups: knapsack DP vs
+//     greedy; ApiPlanRefuel: refuelling DP; ApiRecommendedRefuel) and the
+//     championship (ApiChampionshipStart/NextRace/GetStatus, ApiStandings
+//     by Merge/Quick/Heap Sort, ApiTopK, ApiRaceHistory,
+//     ApiTieBreakReason). Racers now genuinely burn fuel and detour to
+//     stations when low. The Algorithm Lab is added in Phase 4 as a pure
+//     ADDITION. API freeze: 29 Nov 2026.
 // ===========================================================================
 
-#define SMARTRACE_API_VERSION 3
+#define SMARTRACE_API_VERSION 4
 
 // ---------------------------------------------------------------------- //
 // Session / Main Menu
@@ -116,6 +121,62 @@ ResultsView ApiRaceResults();
 // New event-ticker lines since `lastSeenIndex` (pass -1 the first time).
 // Valid until the next ApiRaceLogSince/ApiRaceStep call.
 LogView ApiRaceLogSince(int lastSeenIndex);
+
+// ---------------------------------------------------------------------- //
+// Resource planning (Explorer "Resources" tab, refuel pop-up) — Phase 3
+// Both planners work before a race (from the Start, full tank, whole
+// race) and during one (from the human's current position, fuel and
+// remaining laps).
+// ---------------------------------------------------------------------- //
+
+// Optional pickups along the human's route under `preset`, solved both by
+// the knapsack DP and by the ratio greedy within `budgetTenthsSec` of
+// extra detour time (pass Rules' default, 150, if unsure). Valid until the
+// next ApiPlanPickups/ApiLoadCircuit* call.
+PickupView ApiPlanPickups(Preset preset, int budgetTenthsSec);
+
+// The refuelling DP over the rest of the race on the human's route under
+// `preset`: where to stop and how much to buy, or infeasible. Valid until
+// the next ApiPlanRefuel/ApiLoadCircuit* call.
+RefuelView ApiPlanRefuel(Preset preset);
+
+// What the refuelling DP recommends the human buy at the station they are
+// stopped at right now (tenths; 0 if not at an active station). Pre-fill
+// the refuel pop-up's slider with this.
+int ApiRecommendedRefuel();
+
+// ---------------------------------------------------------------------- //
+// Championship (Screen 5) — Phase 3
+// Flow: ApiChampionshipStart() -> [ApiRaceStart(), step until
+// ApiRaceOver(), ApiChampionshipNextRace()] x 3. Circuits run in the fixed
+// order 0, 1, 2; NextRace records the finished race and loads the next
+// circuit.
+// ---------------------------------------------------------------------- //
+
+// Resets standings for 1 human + Settings.opponentCount opponents and
+// loads circuit 0.
+ApiStatus ApiChampionshipStart();
+
+// Records the race that just finished (Illegal if none is over yet), then
+// loads the next circuit unless the championship is complete.
+ApiStatus ApiChampionshipNextRace();
+
+ChampionshipStatus ApiChampionshipGetStatus();
+
+// Standings sorted by `method`, with that sort's counters. Valid until the
+// next ApiStandings/ApiChampionship* call.
+StandingsView ApiStandings(SortMethod method);
+
+// The best k racers via the size-k heap. Valid until the next ApiTopK/
+// ApiChampionship* call.
+TopKView ApiTopK(int k);
+
+// Results of championship race `raceIndex` (0-based). Valid until the next
+// ApiRaceHistory/ApiChampionship* call.
+ResultsView ApiRaceHistory(int raceIndex);
+
+// Why racerA and racerB are ordered as they are in the standings.
+TieBreak ApiTieBreakReason(int racerA, int racerB);
 
 // ---------------------------------------------------------------------- //
 // Track Explorer / Route Planner (Screen 2) — Phase 1

@@ -47,6 +47,17 @@ namespace Rules
 
     const int kKnapsackDefaultBudgetTenthsSec = 150;   // 15.0s detour allowance
 
+    // Knapsack benefits, in tenths of a second (the same unit as item cost,
+    // which is detour time):
+    //  - a nitro charge: 4 s at 1.5x speed covers the distance of 6 s at
+    //    normal speed, saving 2.0 s = 20 tenths;
+    //  - a fuel station, ONLY when the race's refuel plan is infeasible
+    //    without it: running dry costs the 60 s recovery wait before a
+    //    DNF, so visiting the station is worth 600 tenths. When fuel is not
+    //    needed a station is worth nothing and is not offered at all.
+    const int kNitroPickupBenefitTenthsSec = 20;
+    const int kFuelPickupBenefitTenthsSec = 600;
+
     const int kAlternativeRouteCap = 8;
     const int kAlternativeRouteMaxDepthMultiplier = 2;   // depth <= this * V
 
@@ -60,4 +71,7 @@ namespace Rules
         25, 18, 15, 12, 10, 8, 6, 4, 2, 1,
     };
     const int kFastestLapBonusPoints = 1;
+
+    // Races per championship, run in the fixed circuit order C1 -> C2 -> C3.
+    const int kChampionshipRaces = 3;
 }

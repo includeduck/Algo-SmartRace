@@ -48,6 +48,8 @@ namespace model
         double edgeProgress;         // 0..1 along currentEdge
 
         int fuelTenths;           // 0..Rules::kMaxFuelTenths
+        double fuelRemainder;      // fraction of a tenth consumed but not yet deducted (see AdvanceOnEdge)
+        int refuelledAtVertex;      // vertex of the last purchase, -1 once the racer drives on
         int nitroCharges;          // 0..Rules::kMaxNitroCharges
         bool nitroActive;
         int nitroTimeLeftMs;

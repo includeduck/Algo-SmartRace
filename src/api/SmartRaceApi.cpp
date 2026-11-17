@@ -12,6 +12,11 @@
 #include "../algo/Dfs.h"
 #include "../algo/RoutePlanner.h"
 #include "../sim/RaceEngine.h"
+#include "../sim/ChampionshipManager.h"
+#include "../sim/ResourcePlanner.h"
+#include "../algo/Knapsack.h"
+#include "../algo/RefuelDp.h"
+#include "../core/util/Timer.h"
 #include "../core/util/String.h"
 #include "../core/util/MathUtil.h"
 #include "../core/util/Log.h"
@@ -86,6 +91,22 @@ namespace
     DynArray<ResultRowView> g_resultRowViews;
     DynArray<LogEntry> g_logEntryBuffer;
     DynArray<LogLineView> g_logViewBuffer;
+
+    // Resource planning (Phase 3).
+    DynArray<PickupItemView> g_pickupViews;
+    DynArray<RefuelStopView> g_refuelStops;
+
+    // Championship (Phase 3). Racer ids are stable across races (the
+    // engine numbers racers the same way every race), so one name table
+    // serves standings even between races, when no engine exists.
+    sim::ChampionshipManager g_championship;
+    bool g_championshipActive = false;
+    int g_championshipCircuit = 0;
+    const int kMaxRacerNames = 16;
+    char g_racerNames[kMaxRacerNames][32];
+    DynArray<StandingRowView> g_standingRows;
+    DynArray<StandingRowView> g_topKRows;
+    DynArray<ResultRowView> g_historyRows;
 
     void SetError(const char* message)
     {
@@ -219,6 +240,105 @@ namespace
         *outY = 0.0;
         *outHeading = 0.0;
     }
+
+    // Matches RaceEngine::Start's naming: racer 0 is the human.
+    void FillDefaultNames(int count)
+    {
+        for (int i = 0; i < count && i < kMaxRacerNames; ++i)
+        {
+            if (i == 0)
+            {
+                String::StrCopy(g_racerNames[i], 32, "You");
+            }
+            else
+            {
+                snprintf(g_racerNames[i], 32, "Racer %c", static_cast<char>('A' + ((i - 1) % 26)));
+            }
+        }
+    }
+
+    const char* RacerName(int racerId)
+    {
+        if (racerId < 0 || racerId >= kMaxRacerNames) return "?";
+        return g_racerNames[racerId];
+    }
+
+    // Where the resource planners start from: the human's live state while
+    // a race is running, otherwise the Start of a fresh race.
+    struct PlannerOrigin
+    {
+        int vertex;
+        int lastCompletedCheckpoint;
+        int extraLaps;      // full laps after the current one
+        int fuelTenths;
+        int nitroCharges;
+    };
+
+    PlannerOrigin HumanOrigin()
+    {
+        PlannerOrigin origin;
+        origin.vertex = g_startVertex;
+        origin.lastCompletedCheckpoint = 0;
+        origin.extraLaps = g_settings.laps - 1;
+        origin.fuelTenths = Rules::kMaxFuelTenths;
+        origin.nitroCharges = Rules::kDefaultStartNitroCharges;
+
+        if (g_engine == nullptr || g_raceOver) return origin;
+
+        for (int i = 0; i < g_engine->RacerCount(); ++i)
+        {
+            const model::Racer& racer = g_engine->GetRacer(i);
+            if (!racer.isHuman) continue;
+
+            // Mid-edge, plan from the vertex the car is about to reach.
+            int at = (racer.currentVertex >= 0) ? racer.currentVertex : racer.currentTargetVertex;
+            if (at >= 0) origin.vertex = at;
+            origin.lastCompletedCheckpoint = racer.nextCheckpoint - 1;
+            origin.extraLaps = g_settings.laps - racer.lap;
+            origin.fuelTenths = racer.fuelTenths;
+            origin.nitroCharges = racer.nitroCharges;
+            break;
+        }
+        return origin;
+    }
+
+    bool ContainsId(const DynArray<int>& ids, int id)
+    {
+        for (int i = 0; i < ids.Size(); ++i)
+        {
+            if (ids[i] == id) return true;
+        }
+        return false;
+    }
+
+    sim::SortMethod ToSimSortMethod(SortMethod method)
+    {
+        switch (method)
+        {
+            case SortMethod::Quick: return sim::SortMethod::Quick;
+            case SortMethod::Heap: return sim::SortMethod::Heap;
+            case SortMethod::Merge:
+            default: return sim::SortMethod::Merge;
+        }
+    }
+
+    void FillStandingRows(const DynArray<model::ChampionshipEntry>& entries, DynArray<StandingRowView>* out)
+    {
+        out->Clear();
+        for (int i = 0; i < entries.Size(); ++i)
+        {
+            const model::ChampionshipEntry& e = entries[i];
+            StandingRowView row;
+            row.position = i + 1;
+            row.racerId = e.racerId;
+            row.name = RacerName(e.racerId);
+            row.totalPoints = e.totalPoints;
+            row.wins = e.wins;
+            row.sumOfFinishPositions = e.sumOfFinishPositions;
+            row.bestFastestLapMs = e.bestFastestLapMs;
+            out->Push(row);
+        }
+    }
 }
 
 ApiStatus ApiInit(const char* dataDir)
@@ -228,6 +348,8 @@ ApiStatus ApiInit(const char* dataDir)
     g_raceRunning = false;
     g_raceOver = false;
     g_dataDir.Set(dataDir);
+    g_championshipActive = false;
+    FillDefaultNames(kMaxRacerNames);
     SetError("");
     return ApiStatus::Ok;
 }
@@ -412,6 +534,11 @@ ApiStatus ApiRaceStart()
 
     g_engine->Start(g_graph, g_trackData, config);
     RebuildViews();   // the engine's EffectManager may have already touched edge state
+
+    for (int i = 0; i < g_engine->RacerCount() && i < kMaxRacerNames; ++i)
+    {
+        String::StrCopy(g_racerNames[i], 32, g_engine->GetRacer(i).name);
+    }
 
     g_raceRunning = true;
     g_raceOver = false;
@@ -802,4 +929,331 @@ RouteCompareView ApiCompareRoutes(Preset evalPreset)
     view.candidates.data = g_lastCompareViews.Data();
     view.candidates.count = g_lastCompareViews.Size();
     return view;
+}
+
+// ---------------------------------------------------------------------- //
+// Resource planning
+// ---------------------------------------------------------------------- //
+
+PickupView ApiPlanPickups(Preset preset, int budgetTenthsSec)
+{
+    PickupView view;
+    view.items.data = nullptr;
+    view.items.count = 0;
+    view.budgetTenthsSec = budgetTenthsSec;
+    view.dpBenefit = 0;
+    view.dpCost = 0;
+    view.greedyBenefit = 0;
+    view.greedyCost = 0;
+    view.dpStates = 0;
+    view.fuelNeeded = false;
+
+    if (!g_circuitLoaded)
+    {
+        SetError("no circuit loaded");
+        return view;
+    }
+    if (budgetTenthsSec < 0)
+    {
+        SetError("budget must be >= 0");
+        return view;
+    }
+
+    PlannerOrigin origin = HumanOrigin();
+    model::Weights weights = model::WeightsForPreset(ToModelPreset(preset));
+
+    // Fuel stations are only worth offering when the race cannot be
+    // finished on the route as it stands -- the refuelling DP decides.
+    DynArray<int> raceVertices;
+    DynArray<int> raceEdges;
+    if (sim::BuildRaceRoute(*g_graph, origin.vertex, origin.lastCompletedCheckpoint, origin.extraLaps,
+        g_finishVertex, weights, g_costReferences, &raceVertices, &raceEdges))
+    {
+        algo::RefuelProblem problem;
+        sim::BuildRefuelProblem(*g_graph, raceVertices, raceEdges, origin.fuelTenths, &problem);
+        view.fuelNeeded = !algo::PlanRefuelling(problem).feasible;
+    }
+
+    // Detours are priced against the route for the rest of THIS lap.
+    DynArray<int> lapVertices;
+    DynArray<int> lapEdges;
+    if (!sim::BuildRaceRoute(*g_graph, origin.vertex, origin.lastCompletedCheckpoint, 0,
+        g_finishVertex, weights, g_costReferences, &lapVertices, &lapEdges))
+    {
+        SetError("no route from the current position");
+        return view;
+    }
+
+    DynArray<algo::PickupItem> items;
+    DynArray<sim::PickupInfo> info;
+    sim::BuildPickupItems(*g_graph, lapVertices, lapEdges, origin.nitroCharges, view.fuelNeeded, &items, &info);
+
+    algo::AlgoStats dpStats;
+    algo::KnapsackResult dp = algo::KnapsackDp(items.Data(), items.Size(), budgetTenthsSec, &dpStats);
+    algo::KnapsackResult greedy = algo::GreedyPickup(items.Data(), items.Size(), budgetTenthsSec);
+
+    g_pickupViews.Clear();
+    for (int i = 0; i < items.Size(); ++i)
+    {
+        PickupItemView pv;
+        pv.vertex = items[i].vertex;
+        pv.isNitro = info[i].isNitro;
+        pv.costTenthsSec = items[i].cost;
+        pv.benefitTenthsSec = items[i].benefit;
+        pv.detourSeconds = info[i].detourSeconds;
+        pv.chosenByDp = ContainsId(dp.selectedIds, items[i].id);
+        pv.chosenByGreedy = ContainsId(greedy.selectedIds, items[i].id);
+        g_pickupViews.Push(pv);
+    }
+
+    view.items.data = g_pickupViews.Data();
+    view.items.count = g_pickupViews.Size();
+    view.dpBenefit = dp.totalBenefit;
+    view.dpCost = dp.totalCost;
+    view.greedyBenefit = greedy.totalBenefit;
+    view.greedyCost = greedy.totalCost;
+    view.dpStates = dpStats.dpStates;
+    return view;
+}
+
+RefuelView ApiPlanRefuel(Preset preset)
+{
+    RefuelView view;
+    view.feasible = false;
+    view.totalStopTimeMs = 0;
+    view.finalFuelTenths = 0;
+    view.stopCount = 0;
+    view.stops.data = nullptr;
+    view.stops.count = 0;
+
+    if (!g_circuitLoaded)
+    {
+        SetError("no circuit loaded");
+        return view;
+    }
+
+    PlannerOrigin origin = HumanOrigin();
+    model::Weights weights = model::WeightsForPreset(ToModelPreset(preset));
+
+    DynArray<int> vertices;
+    DynArray<int> edges;
+    if (!sim::BuildRaceRoute(*g_graph, origin.vertex, origin.lastCompletedCheckpoint, origin.extraLaps,
+        g_finishVertex, weights, g_costReferences, &vertices, &edges))
+    {
+        SetError("no route from the current position");
+        return view;
+    }
+
+    algo::RefuelProblem problem;
+    sim::BuildRefuelProblem(*g_graph, vertices, edges, origin.fuelTenths, &problem);
+    algo::RefuelPlan plan = algo::PlanRefuelling(problem);
+
+    g_refuelStops.Clear();
+    for (int j = 0; j < problem.legFuel.Size(); ++j)
+    {
+        RefuelStopView stop;
+        stop.vertex = problem.stopVertex[j];
+        stop.canBuy = problem.canBuyAt[j];
+        stop.purchaseTenths = plan.feasible ? plan.purchase[j] : 0;
+        g_refuelStops.Push(stop);
+    }
+
+    view.feasible = plan.feasible;
+    view.totalStopTimeMs = plan.totalStopTimeMs;
+    view.finalFuelTenths = plan.finalFuel;
+    view.stopCount = plan.stopCount;
+    view.stops.data = g_refuelStops.Data();
+    view.stops.count = g_refuelStops.Size();
+    if (!plan.feasible) SetError("no refuelling plan finishes the race on this route; a station detour is needed");
+    return view;
+}
+
+int ApiRecommendedRefuel()
+{
+    if (g_engine == nullptr) return 0;
+    return g_engine->RecommendedRefuel();
+}
+
+// ---------------------------------------------------------------------- //
+// Championship
+// ---------------------------------------------------------------------- //
+
+ApiStatus ApiChampionshipStart()
+{
+    if (!g_initialized)
+    {
+        SetError("ApiInit was not called");
+        return ApiStatus::NotInitialized;
+    }
+
+    int racers = 1 + g_settings.opponentCount;
+    g_championship.Reset(racers);
+    FillDefaultNames(racers);
+    g_championshipActive = true;
+    g_championshipCircuit = 0;
+    return ApiLoadCircuit(0);
+}
+
+ApiStatus ApiChampionshipNextRace()
+{
+    if (!g_championshipActive)
+    {
+        SetError("no championship running");
+        return ApiStatus::NotLoaded;
+    }
+    if (g_championship.IsComplete())
+    {
+        SetError("the championship is already complete");
+        return ApiStatus::Illegal;
+    }
+    if (g_engine == nullptr || !g_raceOver)
+    {
+        SetError("the current race is not over yet");
+        return ApiStatus::Illegal;
+    }
+
+    DynArray<model::RaceResultRow> results;
+    g_engine->GetResults(&results);
+    g_championship.ApplyRace(results);
+
+    if (g_championship.IsComplete()) return ApiStatus::Ok;   // keep the last race viewable
+
+    g_championshipCircuit = g_championship.RacesCompleted() % kCircuitCount;
+    return ApiLoadCircuit(g_championshipCircuit);
+}
+
+ChampionshipStatus ApiChampionshipGetStatus()
+{
+    ChampionshipStatus status;
+    status.active = g_championshipActive;
+    status.racesCompleted = g_championshipActive ? g_championship.RacesCompleted() : 0;
+    status.racesTotal = Rules::kChampionshipRaces;
+    status.currentCircuitIndex = g_championshipCircuit;
+    status.complete = g_championshipActive && g_championship.IsComplete();
+    status.championId = g_championshipActive ? g_championship.ChampionId() : -1;
+    return status;
+}
+
+StandingsView ApiStandings(SortMethod method)
+{
+    StandingsView view;
+    view.rows.data = nullptr;
+    view.rows.count = 0;
+    view.comparisons = 0;
+    view.swaps = 0;
+    view.micros = 0.0;
+    view.allMethodsAgree = false;
+
+    if (!g_championshipActive)
+    {
+        SetError("no championship running");
+        return view;
+    }
+
+    algo::AlgoStats stats;
+    DynArray<model::ChampionshipEntry> sorted;
+    double before = Timer::NowMicros();
+    g_championship.Standings(ToSimSortMethod(method), &sorted, &stats);
+    double after = Timer::NowMicros();
+
+    FillStandingRows(sorted, &g_standingRows);
+    view.rows.data = g_standingRows.Data();
+    view.rows.count = g_standingRows.Size();
+    view.comparisons = stats.comparisons;
+    view.swaps = stats.swaps;
+    view.micros = after - before;
+    view.allMethodsAgree = g_championship.SelfCheck();
+    return view;
+}
+
+TopKView ApiTopK(int k)
+{
+    TopKView view;
+    view.rows.data = nullptr;
+    view.rows.count = 0;
+    view.comparisons = 0;
+    view.fullSortComparisons = 0;
+    view.matchesSortPrefix = false;
+
+    if (!g_championshipActive)
+    {
+        SetError("no championship running");
+        return view;
+    }
+
+    algo::AlgoStats heapStats;
+    DynArray<model::ChampionshipEntry> top;
+    g_championship.TopK(k, &top, &heapStats);
+
+    algo::AlgoStats sortStats;
+    DynArray<model::ChampionshipEntry> sorted;
+    g_championship.Standings(sim::SortMethod::Merge, &sorted, &sortStats);
+
+    bool matches = true;
+    for (int i = 0; i < top.Size(); ++i)
+    {
+        if (top[i].racerId != sorted[i].racerId) matches = false;
+    }
+
+    FillStandingRows(top, &g_topKRows);
+    view.rows.data = g_topKRows.Data();
+    view.rows.count = g_topKRows.Size();
+    view.comparisons = heapStats.comparisons;
+    view.fullSortComparisons = sortStats.comparisons;
+    view.matchesSortPrefix = matches;
+    return view;
+}
+
+ResultsView ApiRaceHistory(int raceIndex)
+{
+    ResultsView view;
+    view.rows.data = nullptr;
+    view.rows.count = 0;
+
+    if (!g_championshipActive)
+    {
+        SetError("no championship running");
+        return view;
+    }
+
+    const model::RaceResultRow* rows = nullptr;
+    int count = g_championship.RaceHistory(raceIndex, &rows);
+    if (count == 0)
+    {
+        SetError("no such race in this championship yet");
+        return view;
+    }
+
+    g_historyRows.Clear();
+    for (int i = 0; i < count; ++i)
+    {
+        ResultRowView rv;
+        rv.racerId = rows[i].racerId;
+        rv.finishPosition = rows[i].finishPosition;
+        rv.finishTimeMs = rows[i].finishTimeMs;
+        rv.bestLapTimeMs = rows[i].bestLapTimeMs;
+        rv.bonusPoints = rows[i].bonusPoints;
+        rv.pointsAwarded = rows[i].pointsAwarded;
+        rv.status = static_cast<int>(rows[i].status);
+        rv.lapsCompleted = rows[i].lapsCompleted;
+        g_historyRows.Push(rv);
+    }
+
+    view.rows.data = g_historyRows.Data();
+    view.rows.count = g_historyRows.Size();
+    return view;
+}
+
+TieBreak ApiTieBreakReason(int racerA, int racerB)
+{
+    switch (g_championship.TieBreak(racerA, racerB))
+    {
+        case algo::TieBreakReason::Points: return TieBreak::Points;
+        case algo::TieBreakReason::Wins: return TieBreak::Wins;
+        case algo::TieBreakReason::SumOfFinishPositions: return TieBreak::SumOfFinishPositions;
+        case algo::TieBreakReason::BestFastestLap: return TieBreak::BestFastestLap;
+        case algo::TieBreakReason::RacerId: return TieBreak::RacerId;
+        case algo::TieBreakReason::Identical:
+        default: return TieBreak::SameRacer;
+    }
 }
