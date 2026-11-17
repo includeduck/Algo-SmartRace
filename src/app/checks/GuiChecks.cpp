@@ -1,0 +1,158 @@
+#include "api/SmartRaceApi.h"
+#include "ui/Format.h"
+#include "ui/OwnedArray.h"
+#include "ui/RaceClock.h"
+#include <cstdio>
+#include <cstring>
+#include <cmath>
+#include <climits>
+
+namespace
+{
+    int g_failures = 0;
+    int g_checks = 0;
+
+    void Check(bool pass, const char* description)
+    {
+        ++g_checks;
+        if (!pass)
+        {
+            ++g_failures;
+            printf("FAIL: %s\n", description);
+        }
+    }
+
+    void FormatAndClock()
+    {
+        char text[32];
+        Format::Time(text, sizeof(text), -1);
+        Check(strcmp(text, "--:--.---") == 0, "DNF sentinel is not displayed as a time");
+        Format::Time(text, sizeof(text), INT_MAX);
+        Check(strcmp(text, "--:--.---") == 0, "missing-lap sentinel is not a huge time");
+        Format::Time(text, sizeof(text), 83456);
+        Check(strcmp(text, "1:23.456") == 0, "race-time units are milliseconds");
+        RaceClock clock;
+        int ticks = 0;
+        for (int i = 0; i < 100; ++i) ticks += clock.Accumulate(0.01f, 1);
+        Check(ticks == 50, "100 short frames produce 50 deterministic ticks");
+        clock.Reset();
+        ticks = 0;
+        for (int i = 0; i < 10; ++i) ticks += clock.Accumulate(0.1f, 1);
+        Check(ticks == 50, "different frame grouping preserves tick count");
+        clock.Reset();
+        Check(clock.Accumulate(10, 1) == 12, "window stalls have bounded catch-up");
+        clock.Reset();
+        Check(clock.Accumulate(0.01f, 1) == 0, "resume discards stale accumulated time");
+    }
+
+    void ExplorerContracts()
+    {
+        Check(ApiInit("build/missing-gui-data") == ApiStatus::Ok, "startup alone does not validate the data path");
+        Check(ApiLoadCircuit(0) == ApiStatus::IoError, "missing data produces a recoverable load failure");
+        Check(ApiGetGraph().vertices.count == 0, "failed load does not expose a stale graph");
+        Check(ApiInit("data") == ApiStatus::Ok, "GUI initializes the existing API");
+        Check(ApiCircuitCount() == 3, "three authored circuits are listed");
+        for (int circuit = 0; circuit < ApiCircuitCount(); ++circuit)
+        {
+            if (ApiLoadCircuit(circuit) != ApiStatus::Ok)
+            {
+                Check(false, ApiLastError());
+                continue;
+            }
+            Check(ApiValidateTrack().passed, "authored circuit validator passes");
+            TrackInfo info = ApiGetTrackInfo();
+            Check(info.mandatoryCheckpointCount >= 10 && info.shortcutCount >= 2, "minimum circuit scope is exposed");
+            ReachabilityView same = ApiRunBfs(0, 0);
+            Check(same.found && same.path.count == 1, "source equals target is a zero-road BFS path");
+            for (int preset = 0; preset < 4; ++preset)
+            {
+                RouteView d = ApiPlanLap(static_cast<Preset>(preset), RouteAlgo::Dijkstra);
+                bool found = d.found;
+                double cost = d.totalCost;
+                OwnedArray<int> edges;
+                edges.Copy(d.edgePath);
+                int count = edges.View().count;
+                RouteView a = ApiPlanLap(static_cast<Preset>(preset), RouteAlgo::AStar);
+                Check(found && a.found && fabs(cost - a.totalCost) < 0.000001, "Dijkstra/A* agree on the real circuit under the same preset");
+                Check(edges.View().count == count && count > 0, "GUI path copy survives subsequent planner calls");
+            }
+        }
+    }
+
+    void RaceAndChampionship()
+    {
+        Settings settings = ApiGetSettings();
+        settings.laps = 2;
+        settings.opponentCount = 3;
+        Check(ApiSetSettings(settings) == ApiStatus::Ok, "valid GUI settings accepted");
+        Check(ApiChampionshipStart() == ApiStatus::Ok, "championship starts with circuit zero");
+        Check(ApiChampionshipNextRace() != ApiStatus::Ok, "unfinished race cannot be recorded");
+        for (int race = 0; race < 3; ++race)
+        {
+            Check(ApiRaceStart() == ApiStatus::Ok, "race starts once");
+            int before = ApiRaceSnapshot().timeMs;
+            ApiRaceStep(1);
+            Check(ApiRaceSnapshot().timeMs == before + 20, "one GUI simulation tick is 20 ms");
+            int frozen = ApiRaceSnapshot().timeMs;
+            LabInput input = ApiLabDefaultInput();
+            Check(ApiLabRun(LabAlgo::Bfs, input) == ApiStatus::Ok, "Lab can run on the paused current track");
+            ApiLabFrame(ApiLabStepCount() - 1);
+            ApiLabFrame(-1);
+            Check(ApiRaceSnapshot().timeMs == frozen, "Lab replay does not advance race time");
+            for (int tick = 0; tick < 50000 && !ApiRaceOver(); ++tick) ApiRaceStep(1);
+            Check(ApiRaceOver(), "race completes or classifies its racers");
+            Check(ApiRaceResults().rows.count == 4, "results contain human plus three opponents");
+            Check(ApiChampionshipNextRace() == ApiStatus::Ok, "record finished race and load next circuit");
+            Check(ApiChampionshipGetStatus().racesCompleted == race + 1, "each Continue records exactly one race");
+            Check(ApiChampionshipNextRace() != ApiStatus::Ok, "duplicate Continue is rejected");
+        }
+        Check(ApiChampionshipGetStatus().complete, "champion is declared after circuit three");
+        int ids[10] = {};
+        StandingsView baseline = ApiStandings(SortMethod::Merge);
+        int count = baseline.rows.count;
+        for (int i = 0; i < count && i < 10; ++i) ids[i] = baseline.rows[i].racerId;
+        for (int method = 0; method < 3; ++method)
+        {
+            StandingsView view = ApiStandings(static_cast<SortMethod>(method));
+            Check(view.allMethodsAgree && view.rows.count == count, "dashboard sorting methods agree");
+            for (int i = 0; i < count; ++i) Check(view.rows[i].racerId == ids[i], "ranked identity matches common comparator");
+        }
+        for (int k = 1; k <= count; ++k)
+        {
+            TopKView top = ApiTopK(k);
+            Check(top.matchesSortPrefix && top.rows.count == k, "top-k matches full-sort prefix");
+        }
+    }
+
+    void LabContracts()
+    {
+        LabInput input = ApiLabDefaultInput();
+        input.seed = 2;
+        input.useBriefExample = true;
+        for (int module = 0; module < 13; ++module)
+        {
+            if (ApiLabRun(static_cast<LabAlgo>(module), input) != ApiStatus::Ok)
+            {
+                Check(false, ApiLastError());
+                continue;
+            }
+            int steps = ApiLabStepCount();
+            Check(steps > 0, "Lab module records actual operations");
+            LabFrame end = ApiLabFrame(steps - 1);
+            Check(end.step == steps - 1, "Lab can seek to final operation");
+            LabFrame initial = ApiLabFrame(-1);
+            Check(initial.step == -1 && initial.visited == 0 && initial.comparisons == 0, "backward seek restores initial counters");
+        }
+    }
+}
+
+int main()
+{
+    FormatAndClock();
+    ExplorerContracts();
+    RaceAndChampionship();
+    LabContracts();
+    ApiShutdown();
+    printf("GUI contract checks: %d checks, %d failures\n", g_checks, g_failures);
+    return g_failures == 0 ? 0 : 1;
+}

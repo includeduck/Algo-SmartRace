@@ -77,11 +77,31 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/src/app")
     file(GLOB_RECURSE SMARTRACE_APP_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_SOURCE_DIR}/src/app/*.cpp"
     )
+    list(FILTER SMARTRACE_APP_SOURCES EXCLUDE REGEX "/checks/")
     if(SMARTRACE_APP_SOURCES)
-        add_executable(smartrace WIN32 ${SMARTRACE_APP_SOURCES})
-        target_link_libraries(smartrace PRIVATE smartrace_core)
-        # Rayyan: add your GUI library here, e.g.
-        #   target_include_directories(smartrace PRIVATE ${CMAKE_SOURCE_DIR}/third_party/raylib/include)
-        #   target_link_libraries(smartrace PRIVATE ${CMAKE_SOURCE_DIR}/third_party/raylib/lib/raylib.lib winmm)
+        add_executable(smartrace ${SMARTRACE_APP_SOURCES})
+        target_include_directories(smartrace PRIVATE
+            "${CMAKE_SOURCE_DIR}/src/app"
+            "${CMAKE_SOURCE_DIR}/third_party/raylib/include"
+            "${CMAKE_SOURCE_DIR}/third_party/raygui")
+        target_link_libraries(smartrace PRIVATE smartrace_core
+            "${CMAKE_SOURCE_DIR}/third_party/raylib/lib/raylib.lib"
+            winmm gdi32 opengl32 user32 shell32)
+        if(MSVC)
+            # Keep the backend's default MD/MDd runtime. raylib's C objects
+            # use imported CRT symbols; Debug resolves them through the debug CRT.
+            target_link_options(smartrace PRIVATE
+                $<$<CONFIG:Debug>:/NODEFAULTLIB:msvcrt.lib>
+                $<$<CONFIG:Release>:/SUBSYSTEM:WINDOWS>
+                $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>)
+        endif()
+        set_target_properties(smartrace PROPERTIES
+            VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:smartrace>")
+        add_custom_command(TARGET smartrace POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${CMAKE_SOURCE_DIR}/data" "$<TARGET_FILE_DIR:smartrace>/data")
+        add_executable(smartrace_gui_checks src/app/checks/GuiChecks.cpp)
+        target_include_directories(smartrace_gui_checks PRIVATE "${CMAKE_SOURCE_DIR}/src/app")
+        target_link_libraries(smartrace_gui_checks PRIVATE smartrace_core)
     endif()
 endif()
