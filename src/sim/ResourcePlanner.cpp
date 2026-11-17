@@ -61,6 +61,11 @@ namespace sim
                 if (a.id != b.id) return (a.id < b.id) ? -1 : 1;
                 return 0;
             }
+
+            static int Key(const algo::PickupItem& item)
+            {
+                return item.id;
+            }
         };
     }
 
@@ -103,6 +108,26 @@ namespace sim
             for (int i = 1; i < lap.vertexPath.Size(); ++i) outVertices->Push(lap.vertexPath[i]);
             for (int i = 0; i < lap.edgePath.Size(); ++i) outEdges->Push(lap.edgePath[i]);
         }
+        return true;
+    }
+
+    bool AppendLapVia(const model::Graph& graph, int fromVertex, int lastCompletedCheckpoint, int via,
+        int finishVertex, const model::Weights& weights, const model::CostReferences& refs,
+        DynArray<int>* outVertices, DynArray<int>* outEdges)
+    {
+        algo::PathResult toVia = algo::Dijkstra(graph, fromVertex, via, weights, refs);
+        if (!toVia.found) return false;
+
+        int progress = ProgressAlong(graph, toVia.vertexPath, lastCompletedCheckpoint);
+        algo::PlanResult onward = algo::PlanLap(graph, via, progress, finishVertex, weights, refs,
+            algo::RouteAlgo::Dijkstra);
+        if (!onward.found) return false;
+
+        int first = (outVertices->Size() > 0) ? 1 : 0;
+        for (int i = first; i < toVia.vertexPath.Size(); ++i) outVertices->Push(toVia.vertexPath[i]);
+        for (int i = 1; i < onward.vertexPath.Size(); ++i) outVertices->Push(onward.vertexPath[i]);
+        for (int i = 0; i < toVia.edgePath.Size(); ++i) outEdges->Push(toVia.edgePath[i]);
+        for (int i = 0; i < onward.edgePath.Size(); ++i) outEdges->Push(onward.edgePath[i]);
         return true;
     }
 

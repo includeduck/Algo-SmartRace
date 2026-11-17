@@ -31,6 +31,15 @@ namespace sim
         int extraFullLaps, int finishVertex, const model::Weights& weights, const model::CostReferences& refs,
         DynArray<int>* outVertices, DynArray<int>* outEdges);
 
+    // APPENDS to out*: a route from `fromVertex` to `via` (one Dijkstra
+    // search), then on through every checkpoint after the ones completed by
+    // then, to the finish. When out* already holds a route ending at
+    // `fromVertex`, the duplicate join vertex is not repeated, so laps can
+    // be chained. Returns false if any part is unreachable.
+    bool AppendLapVia(const model::Graph& graph, int fromVertex, int lastCompletedCheckpoint, int via,
+        int finishVertex, const model::Weights& weights, const model::CostReferences& refs,
+        DynArray<int>* outVertices, DynArray<int>* outEdges);
+
     // Cuts a route into refuelling-DP stops: stop 0 is the route's first
     // vertex (a purchase is possible there only if it is an active station),
     // then every fuel station the route passes, in order (a station passed

@@ -44,11 +44,17 @@
 //     championship (ApiChampionshipStart/NextRace/GetStatus, ApiStandings
 //     by Merge/Quick/Heap Sort, ApiTopK, ApiRaceHistory,
 //     ApiTieBreakReason). Racers now genuinely burn fuel and detour to
-//     stations when low. The Algorithm Lab is added in Phase 4 as a pure
-//     ADDITION. API freeze: 29 Nov 2026.
+//     stations when low.
+//   v1.0 (Phase 4, FROZEN 29 Nov 2026): the Algorithm Lab (ApiLabRun,
+//     ApiLabFrame, ApiLabGraph, ApiLabPseudocode, ApiLabEvents,
+//     ApiLabResultText), track validation (ApiValidateTrack; TrackInfo's
+//     validatorPassed is now the real validator), the track generator
+//     (ApiLabRun(TrackGenerator) + ApiLabGeneratorReport +
+//     ApiLabSaveGenerated) and ApiLoadCircuitFile. From here on the API
+//     only changes for bug fixes.
 // ===========================================================================
 
-#define SMARTRACE_API_VERSION 4
+#define SMARTRACE_API_VERSION 10
 
 // ---------------------------------------------------------------------- //
 // Session / Main Menu
@@ -72,8 +78,9 @@ const char* ApiCircuitName(int index);
 // loaded. Ends any race in progress.
 ApiStatus ApiLoadCircuit(int index);
 
-// Loads a .trk file directly (used for track-generator output in Phase 4).
-// Not implemented in v0.1.
+// Loads a .trk file directly -- e.g. a generated track saved with
+// ApiLabSaveGenerated -- replacing the current circuit, exactly like
+// ApiLoadCircuit.
 ApiStatus ApiLoadCircuitFile(const char* path);
 
 Settings ApiGetSettings();
@@ -177,6 +184,56 @@ ResultsView ApiRaceHistory(int raceIndex);
 
 // Why racerA and racerB are ordered as they are in the standings.
 TieBreak ApiTieBreakReason(int racerA, int racerB);
+
+// ---------------------------------------------------------------------- //
+// Track validation — Phase 4
+// ---------------------------------------------------------------------- //
+
+// Every playability check on the loaded circuit (computed when it was
+// loaded). Valid until the next ApiLoadCircuit* call.
+ValidationView ApiValidateTrack();
+
+// ---------------------------------------------------------------------- //
+// Algorithm Lab (Screen 4) — Phase 4
+// ApiLabRun runs the SAME function gameplay uses, once, with a recorder
+// attached; ApiLabFrame then replays any step. Graph algorithms, Kruskal,
+// the knapsack/refuel planners, the event queue and the sorts run on the
+// CURRENT data: the loaded circuit (with any live race effects), and the
+// championship standings when one is running.
+// ---------------------------------------------------------------------- //
+
+LabInput ApiLabDefaultInput();
+
+// Runs `algo` and records every step. Needs a loaded circuit, except for
+// the sorts, the brief's knapsack example and the generator.
+ApiStatus ApiLabRun(LabAlgo algo, const LabInput& input);
+
+int ApiLabStepCount();
+
+// State after step `step` (-1 = initial, clamped to the last step). Seeking
+// forward is incremental; seeking backward replays from the start.
+LabFrame ApiLabFrame(int step);
+
+// The graph a Graph-kind frame indexes into: the loaded circuit, or for the
+// generator its candidate-road graph (every candidate, kept or not). Valid
+// until the next ApiLabRun/ApiLoadCircuit* call.
+GraphView ApiLabGraph();
+
+PseudocodeView ApiLabPseudocode(LabAlgo algo);
+
+// A one-line summary of the last run's result (path cost, items chosen,
+// tree weight, accepted attempt, ...).
+const char* ApiLabResultText();
+
+// The events the EventQueue lab scheduled. Valid until the next ApiLabRun.
+ArrayView<LabEventView> ApiLabEvents();
+
+// Every attempt of the last generator run (accepted or rejected, and why).
+GeneratorReportView ApiLabGeneratorReport();
+
+// Writes the last generated track as a .trk file; ApiLoadCircuitFile(path)
+// then makes it the playable circuit.
+ApiStatus ApiLabSaveGenerated(const char* path);
 
 // ---------------------------------------------------------------------- //
 // Track Explorer / Route Planner (Screen 2) — Phase 1

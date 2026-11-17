@@ -20,6 +20,11 @@ namespace
             if (a > b) return 1;
             return 0;
         }
+
+        static int Key(const int& v)
+        {
+            return v;
+        }
     };
 
     enum class InputKind

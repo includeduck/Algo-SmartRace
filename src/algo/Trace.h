@@ -26,6 +26,7 @@ namespace algo
         Reject,                          // a = candidate id, value = reason code
         UnionSets,                        // a, b = set roots unioned
         AcceptEdge,                        // a = edgeId accepted (MST)
+        MarkEdge,                            // a = edgeId, b = state code (generator: extra road, shortcut, obstacle)
     };
 
     struct TraceStep
@@ -76,6 +77,21 @@ namespace algo
         void Clear()
         {
             m_steps.Clear();
+        }
+
+        // Re-labels steps [firstStep, end) with `line`. Used when one
+        // algorithm runs inside another (Kruskal inside the track
+        // generator): the steps keep their meaning, but the Lab highlights
+        // the OUTER algorithm's pseudocode line.
+        void SetLineFrom(int firstStep, int line)
+        {
+            for (int i = firstStep; i < m_steps.Size(); ++i) m_steps[i].line = line;
+        }
+
+        void CopyFrom(const Trace& other)
+        {
+            m_steps.Clear();
+            for (int i = 0; i < other.StepCount(); ++i) m_steps.Push(other.Step(i));
         }
 
     private:

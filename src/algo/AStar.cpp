@@ -1,4 +1,5 @@
 #include "AStar.h"
+#include "Pseudocode.h"
 #include "../core/ds/MinHeap.h"
 #include "../core/util/MathUtil.h"
 
@@ -86,24 +87,26 @@ namespace algo
         HeapItem startItem = { Heuristic(graph, source, target, heuristicScale), source };
         heap.Push(startItem);
         if (stats != nullptr) ++stats->heapPushes;
+        if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, source, -1, 0.0, lines::shortest::kStart);
 
         while (!heap.Empty())
         {
             HeapItem top = heap.Pop();
             if (stats != nullptr) ++stats->heapPops;
+            if (trace != nullptr) trace->Record(TraceOp::PopHeap, top.vertex, -1, top.f, lines::shortest::kPop);
 
             int u = top.vertex;
             if (closed[u]) continue;
             closed[u] = true;   // consistent heuristic: never reopened
             if (stats != nullptr) ++stats->verticesVisited;
-            if (trace != nullptr) trace->Record(TraceOp::VisitVertex, u);
+            if (trace != nullptr) trace->Record(TraceOp::VisitVertex, u, -1, g[u], lines::shortest::kClose);
 
             if (u == target) break;
 
             for (const model::AdjNode* node = graph.Neighbors(u); node != nullptr; node = node->next)
             {
                 if (stats != nullptr) ++stats->edgesExamined;
-                if (trace != nullptr) trace->Record(TraceOp::ExamineEdge, node->edgeId);
+                if (trace != nullptr) trace->Record(TraceOp::ExamineEdge, node->edgeId, -1, 0.0, lines::shortest::kExamine);
 
                 if (!graph.IsTraversable(node->edgeId)) continue;
 
@@ -119,12 +122,13 @@ namespace algo
                     parent[v] = u;
                     parentEdge[v] = node->edgeId;
                     if (stats != nullptr) ++stats->edgesRelaxed;
-                    if (trace != nullptr) trace->Record(TraceOp::RelaxEdge, node->edgeId, -1, candidate);
+                    if (trace != nullptr) trace->Record(TraceOp::RelaxEdge, node->edgeId, v, candidate, lines::shortest::kRelax);
 
                     double f = candidate + Heuristic(graph, v, target, heuristicScale);
                     HeapItem item = { f, v };
                     heap.Push(item);
                     if (stats != nullptr) ++stats->heapPushes;
+                    if (trace != nullptr) trace->Record(TraceOp::PushHeap, v, -1, f, lines::shortest::kPush);
                 }
             }
         }

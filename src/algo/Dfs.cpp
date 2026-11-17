@@ -1,4 +1,5 @@
 #include "Dfs.h"
+#include "Pseudocode.h"
 #include "../core/ds/Stack.h"
 #include "../core/ds/Queue.h"
 
@@ -61,7 +62,7 @@ namespace algo
         ++clock;
         result.order.Push(source);
         if (stats != nullptr) ++stats->verticesVisited;
-        if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, source, -1);
+        if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, source, -1, 0.0, lines::dfs::kStart);
 
         TraversalFrame first = { source, graph.Neighbors(source) };
         stack.Push(first);
@@ -77,7 +78,7 @@ namespace algo
                 top.it = node->next;
 
                 if (stats != nullptr) ++stats->edgesExamined;
-                if (trace != nullptr) trace->Record(TraceOp::ExamineEdge, node->edgeId);
+                if (trace != nullptr) trace->Record(TraceOp::ExamineEdge, node->edgeId, -1, 0.0, lines::dfs::kExamine);
 
                 if (!graph.IsTraversable(node->edgeId)) continue;
 
@@ -89,7 +90,7 @@ namespace algo
                 result.parent[v] = top.vertex;
                 result.order.Push(v);
                 if (stats != nullptr) ++stats->verticesVisited;
-                if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, v, top.vertex);
+                if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, v, top.vertex, result.discoveryTime[v], lines::dfs::kDiscover);
 
                 TraversalFrame next = { v, graph.Neighbors(v) };
                 stack.Push(next);
@@ -102,7 +103,7 @@ namespace algo
                 int u = stack.Top().vertex;
                 result.finishTime[u] = clock;
                 ++clock;
-                if (trace != nullptr) trace->Record(TraceOp::FinishVertex, u);
+                if (trace != nullptr) trace->Record(TraceOp::FinishVertex, u, -1, result.finishTime[u], lines::dfs::kFinish);
                 stack.Pop();
             }
         }

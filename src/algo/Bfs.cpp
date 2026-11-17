@@ -1,4 +1,5 @@
 #include "Bfs.h"
+#include "Pseudocode.h"
 #include "../core/ds/Queue.h"
 
 namespace algo
@@ -27,17 +28,17 @@ namespace algo
         result.reachable[source] = true;
         frontier.Enqueue(source);
         if (stats != nullptr) ++stats->verticesVisited;
-        if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, source, -1);
+        if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, source, -1, 0.0, lines::bfs::kStart);
 
         while (!frontier.Empty())
         {
             int u = frontier.Dequeue();
-            if (trace != nullptr) trace->Record(TraceOp::VisitVertex, u);
+            if (trace != nullptr) trace->Record(TraceOp::VisitVertex, u, -1, 0.0, lines::bfs::kDequeue);
 
             for (const model::AdjNode* node = graph.Neighbors(u); node != nullptr; node = node->next)
             {
                 if (stats != nullptr) ++stats->edgesExamined;
-                if (trace != nullptr) trace->Record(TraceOp::ExamineEdge, node->edgeId);
+                if (trace != nullptr) trace->Record(TraceOp::ExamineEdge, node->edgeId, -1, 0.0, lines::bfs::kExamine);
 
                 if (!graph.IsTraversable(node->edgeId)) continue;
 
@@ -49,7 +50,7 @@ namespace algo
                 result.parent[v] = u;
                 frontier.Enqueue(v);
                 if (stats != nullptr) ++stats->verticesVisited;
-                if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, v, u);
+                if (trace != nullptr) trace->Record(TraceOp::DiscoverVertex, v, u, result.distEdges[v], lines::bfs::kDiscover);
             }
         }
 

@@ -5,6 +5,8 @@
 // Dijkstra/A*/RoutePlanner + the deterministic RaceEngine). Resource
 // planning, championship and the Algorithm Lab are still to come.
 #include "SmartRaceApi.h"
+#include "ApiInternal.h"
+#include "../sim/TrackValidator.h"
 #include "../model/Rules.h"
 #include "../model/CostModel.h"
 #include "../io/TrackLoader.h"
@@ -72,6 +74,11 @@ namespace
 
     DynArray<VertexView> g_vertexViews;
     DynArray<EdgeView> g_edgeViews;
+
+    // The validator's verdict on the loaded circuit, computed once at load
+    // (it runs several route searches and a DP, too much for every frame).
+    sim::ValidationReport g_validation;
+    DynArray<ValidationCheckView> g_validationViews;
 
     // Latest Explorer/planner results, kept alive so the ArrayViews handed
     // back to the GUI stay valid until the next call of the same kind (or
@@ -176,12 +183,12 @@ namespace
         }
     }
 
-    void RebuildViews()
+    void BuildViewsOf(const model::Graph& graph, DynArray<VertexView>* vertexViews, DynArray<EdgeView>* edgeViews)
     {
-        g_vertexViews.Clear();
-        for (int i = 0; i < g_graph->VertexCount(); ++i)
+        vertexViews->Clear();
+        for (int i = 0; i < graph.VertexCount(); ++i)
         {
-            const model::Vertex& v = g_graph->GetVertex(i);
+            const model::Vertex& v = graph.GetVertex(i);
             VertexView vv;
             vv.id = v.id;
             vv.x = v.x;
@@ -189,13 +196,13 @@ namespace
             vv.type = ToApiVertexType(v.type);
             vv.checkpointOrder = v.checkpointOrder;
             vv.active = v.active;
-            g_vertexViews.Push(vv);
+            vertexViews->Push(vv);
         }
 
-        g_edgeViews.Clear();
-        for (int i = 0; i < g_graph->EdgeCount(); ++i)
+        edgeViews->Clear();
+        for (int i = 0; i < graph.EdgeCount(); ++i)
         {
-            const model::Edge& e = g_graph->GetEdge(i);
+            const model::Edge& e = graph.GetEdge(i);
             EdgeView ev;
             ev.id = e.id;
             ev.from = e.from;
@@ -209,8 +216,13 @@ namespace
             ev.speedCap = e.speedCap;
             ev.isShortcut = e.isShortcut;
             ev.directed = e.directed;
-            g_edgeViews.Push(ev);
+            edgeViews->Push(ev);
         }
+    }
+
+    void RebuildViews()
+    {
+        BuildViewsOf(*g_graph, &g_vertexViews, &g_edgeViews);
     }
 
     void ComputeRacerPosition(const model::Racer& racer, double* outX, double* outY, double* outHeading)
@@ -349,6 +361,10 @@ ApiStatus ApiInit(const char* dataDir)
     g_raceOver = false;
     g_dataDir.Set(dataDir);
     g_championshipActive = false;
+    delete g_engine;
+    g_engine = nullptr;
+    g_graph = nullptr;
+    api_internal::ShutdownLab();
     FillDefaultNames(kMaxRacerNames);
     SetError("");
     return ApiStatus::Ok;
@@ -363,6 +379,7 @@ void ApiShutdown()
     delete g_engine;
     g_engine = nullptr;
     g_graph = nullptr;   // borrowed alias into g_trackData, not owned here
+    api_internal::ShutdownLab();
 }
 
 const char* ApiLastError()
@@ -382,6 +399,56 @@ const char* ApiCircuitName(int index)
     return kCircuits[index].fallbackName;
 }
 
+namespace
+{
+    ApiStatus LoadFromPath(const char* path, const char* fallbackName)
+    {
+        int errorLine = 0;
+        char errorMessage[200];
+        io::LoadResult loadResult = io::LoadTrackFile(path, &g_trackData, &errorLine, errorMessage, sizeof(errorMessage));
+        if (loadResult != io::LoadResult::Ok)
+        {
+            // A failed load leaves g_trackData cleared: nothing is loaded.
+            g_circuitLoaded = false;
+            g_graph = nullptr;
+            delete g_engine;
+            g_engine = nullptr;
+            api_internal::ResetLab();
+
+            char full[320];
+            snprintf(full, sizeof(full), "%s (line %d): %s", path, errorLine, errorMessage);
+            SetError(full);
+            return ApiStatus::IoError;
+        }
+
+        g_graph = g_trackData.graph;   // borrowed; g_trackData owns it
+
+        g_circuitName.Set(g_trackData.name.Empty() ? fallbackName : g_trackData.name.CStr());
+        g_laps = g_trackData.laps;
+
+        g_startVertex = -1;
+        g_finishVertex = -1;
+        for (int i = 0; i < g_graph->VertexCount(); ++i)
+        {
+            model::VertexType t = g_graph->GetVertex(i).type;
+            if (t == model::VertexType::Start) g_startVertex = i;
+            if (t == model::VertexType::Finish) g_finishVertex = i;
+        }
+
+        g_costReferences = model::ComputeReferences(*g_graph);
+        RebuildViews();
+        g_validation = sim::ValidateTrack(*g_graph, g_laps);
+
+        g_circuitLoaded = true;
+        g_raceRunning = false;
+        g_raceOver = false;
+        delete g_engine;
+        g_engine = nullptr;
+        api_internal::ResetLab();
+        return ApiStatus::Ok;
+    }
+}
+
 ApiStatus ApiLoadCircuit(int index)
 {
     if (!g_initialized)
@@ -398,48 +465,22 @@ ApiStatus ApiLoadCircuit(int index)
     String path(g_dataDir.CStr());
     path.Append("/");
     path.Append(kCircuits[index].relativePath);
-
-    int errorLine = 0;
-    char errorMessage[200];
-    io::LoadResult loadResult = io::LoadTrackFile(path.CStr(), &g_trackData, &errorLine, errorMessage, sizeof(errorMessage));
-    if (loadResult != io::LoadResult::Ok)
-    {
-        char full[320];
-        snprintf(full, sizeof(full), "%s (line %d): %s", path.CStr(), errorLine, errorMessage);
-        SetError(full);
-        return ApiStatus::IoError;
-    }
-
-    g_graph = g_trackData.graph;   // borrowed; g_trackData owns it
-
-    g_circuitName.Set(g_trackData.name.Empty() ? kCircuits[index].fallbackName : g_trackData.name.CStr());
-    g_laps = g_trackData.laps;
-
-    g_startVertex = -1;
-    g_finishVertex = -1;
-    for (int i = 0; i < g_graph->VertexCount(); ++i)
-    {
-        model::VertexType t = g_graph->GetVertex(i).type;
-        if (t == model::VertexType::Start) g_startVertex = i;
-        if (t == model::VertexType::Finish) g_finishVertex = i;
-    }
-
-    g_costReferences = model::ComputeReferences(*g_graph);
-    RebuildViews();
-
-    g_circuitLoaded = true;
-    g_raceRunning = false;
-    g_raceOver = false;
-    delete g_engine;
-    g_engine = nullptr;
-    return ApiStatus::Ok;
+    return LoadFromPath(path.CStr(), kCircuits[index].fallbackName);
 }
 
 ApiStatus ApiLoadCircuitFile(const char* path)
 {
-    (void)path;
-    SetError("ApiLoadCircuitFile is not implemented until Phase 4 (track generator)");
-    return ApiStatus::IoError;
+    if (!g_initialized)
+    {
+        SetError("ApiInit was not called");
+        return ApiStatus::NotInitialized;
+    }
+    if (path == nullptr || path[0] == '\0')
+    {
+        SetError("no path given");
+        return ApiStatus::InvalidArgument;
+    }
+    return LoadFromPath(path, "Custom circuit");
 }
 
 Settings ApiGetSettings()
@@ -502,9 +543,7 @@ TrackInfo ApiGetTrackInfo()
     algo::DfsDeadEndsResult deadEnds = algo::DfsDeadEnds(*g_graph, g_finishVertex);
     info.hasDeadEnd = deadEnds.deadEndVertices.Size() > 0;
 
-    // The real TrackValidator lands in Phase 4; until then we report the
-    // structural checks we already have.
-    info.validatorPassed = (g_startVertex >= 0 && g_finishVertex >= 0 && cpCount >= Rules::kMandatoryCheckpointsPerCircuit);
+    info.validatorPassed = g_validation.passed;
 
     return info;
 }
@@ -1255,5 +1294,105 @@ TieBreak ApiTieBreakReason(int racerA, int racerB)
         case algo::TieBreakReason::RacerId: return TieBreak::RacerId;
         case algo::TieBreakReason::Identical:
         default: return TieBreak::SameRacer;
+    }
+}
+
+// ---------------------------------------------------------------------- //
+// Track validation
+// ---------------------------------------------------------------------- //
+
+ValidationView ApiValidateTrack()
+{
+    ValidationView view;
+    view.passed = false;
+    view.checks.data = nullptr;
+    view.checks.count = 0;
+
+    if (!g_circuitLoaded)
+    {
+        SetError("no circuit loaded");
+        return view;
+    }
+
+    g_validationViews.Clear();
+    for (int i = 0; i < sim::kValidationCheckCount; ++i)
+    {
+        ValidationCheckView check;
+        check.name = sim::ValidationCheckName(static_cast<sim::ValidationCheck>(i));
+        check.passed = g_validation.check[i];
+        check.detail = g_validation.detail[i];
+        g_validationViews.Push(check);
+    }
+
+    view.passed = g_validation.passed;
+    view.checks.data = g_validationViews.Data();
+    view.checks.count = g_validationViews.Size();
+    return view;
+}
+
+// ---------------------------------------------------------------------- //
+// Internal accessors for Lab.cpp (see ApiInternal.h)
+// ---------------------------------------------------------------------- //
+
+namespace api_internal
+{
+    bool CircuitLoaded()
+    {
+        return g_circuitLoaded;
+    }
+
+    model::Graph* CurrentGraph()
+    {
+        return g_graph;
+    }
+
+    const io::TrackData& CurrentTrack()
+    {
+        return g_trackData;
+    }
+
+    int StartVertex()
+    {
+        return g_startVertex;
+    }
+
+    int FinishVertex()
+    {
+        return g_finishVertex;
+    }
+
+    const model::CostReferences& CostRefs()
+    {
+        return g_costReferences;
+    }
+
+    int Laps()
+    {
+        return g_settings.laps;
+    }
+
+    bool ChampionshipActive()
+    {
+        return g_championshipActive;
+    }
+
+    const sim::ChampionshipManager& Championship()
+    {
+        return g_championship;
+    }
+
+    void SetError(const char* message)
+    {
+        ::SetError(message);
+    }
+
+    model::Preset ToModelPreset(Preset preset)
+    {
+        return ::ToModelPreset(preset);
+    }
+
+    void BuildGraphViews(const model::Graph& graph, DynArray<VertexView>* vertices, DynArray<EdgeView>* edges)
+    {
+        BuildViewsOf(graph, vertices, edges);
     }
 }

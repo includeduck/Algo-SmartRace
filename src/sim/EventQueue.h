@@ -61,6 +61,10 @@ namespace sim
 
         bool Empty() const;
 
+        // The event with this id (nullptr if none), whether pending, fired
+        // or cancelled.
+        const Event* Find(int eventId) const;
+
         // Live (not cancelled, not yet fired) events still queued. O(n) —
         // diagnostic/test use only.
         int PendingCount() const;

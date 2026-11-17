@@ -83,6 +83,12 @@ namespace sim
         return m_heap.Empty();
     }
 
+    const Event* EventQueue::Find(int eventId) const
+    {
+        if (eventId < 0 || eventId >= m_byId.Size()) return nullptr;
+        return m_byId[eventId];
+    }
+
     int EventQueue::PendingCount() const
     {
         int count = 0;

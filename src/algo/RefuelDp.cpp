@@ -1,4 +1,5 @@
 #include "RefuelDp.h"
+#include "Pseudocode.h"
 #include "../core/util/MathUtil.h"
 
 namespace algo
@@ -38,6 +39,7 @@ namespace algo
             bought[i] = 0;
         }
         dp[startFuel] = 0;
+        if (trace != nullptr) trace->Record(TraceOp::DpCell, 0, startFuel, 0.0, lines::refuel::kStart);
 
         for (int j = 0; j < m; ++j)
         {
@@ -66,7 +68,7 @@ namespace algo
                         dp[idx] = cost;
                         fromFuel[idx] = f;
                         bought[idx] = a;
-                        if (trace != nullptr) trace->Record(TraceOp::DpCell, j + 1, nf, static_cast<double>(cost));
+                        if (trace != nullptr) trace->Record(TraceOp::DpCell, j + 1, nf, static_cast<double>(cost), lines::refuel::kCell);
                     }
                 }
             }

@@ -40,6 +40,11 @@ namespace algo
         {
             return CompareStanding(a, b);
         }
+
+        static int Key(const model::ChampionshipEntry& e)
+        {
+            return e.racerId;
+        }
     };
 
     // Racers are large (they carry their planned path), so the race engine
@@ -49,6 +54,11 @@ namespace algo
         static int Compare(const model::Racer* const& a, const model::Racer* const& b)
         {
             return CompareFinish(*a, *b);
+        }
+
+        static int Key(const model::Racer* const& r)
+        {
+            return r->id;
         }
     };
 }

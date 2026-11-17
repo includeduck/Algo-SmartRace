@@ -32,13 +32,26 @@ This produces, under `build/`:
 
 ## Run
 
+Run both from the repository root (they read `data/`):
+
 ```bash
-build/tests/Debug/smartrace_tests.exe
-build/cli/Debug/smartrace_cli.exe
+build/Debug/smartrace_tests.exe
+build/Debug/smartrace_cli.exe
 ```
 
-(Exact executable paths depend on the generator; Visual Studio puts them
-under `build/<target>/<Config>/`.)
+The CLI prints the Explorer data for each circuit, plays a full
+championship, runs every Algorithm Lab module, then generates a track,
+saves it to `build/generated_demo.trk`, reloads it and validates it.
+
+## API status (for the GUI)
+
+`SmartRaceApi.h` is **v1.0 and frozen** (`SMARTRACE_API_VERSION 10`): from
+here on, changes are additive only. Everything the five screens need is
+real: circuits and validation, races, resource planning, the championship,
+and the Algorithm Lab (`ApiLabRun` -> `ApiLabFrame(step)` for any step,
+with pseudocode lines, counters and per-vertex/edge/cell state), including
+the backtracking track generator (`LabAlgo::TrackGenerator`,
+`ApiLabSaveGenerated`, `ApiLoadCircuitFile`).
 
 ## Project layout
 

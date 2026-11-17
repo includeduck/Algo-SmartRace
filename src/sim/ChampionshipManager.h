@@ -50,6 +50,13 @@ namespace sim
             return m_entries.Size();
         }
 
+        // The raw, UNSORTED entries (indexed by racer id) -- what the
+        // Algorithm Lab hands a sort to watch it rank them.
+        const DynArray<model::ChampionshipEntry>& Entries() const
+        {
+            return m_entries;
+        }
+
         bool IsComplete() const;   // all scheduled races run
         int ChampionId() const;      // -1 until IsComplete()
 

@@ -1,5 +1,6 @@
 #include "Knapsack.h"
 #include "Sorting.h"
+#include "Pseudocode.h"
 
 namespace algo
 {
@@ -40,6 +41,11 @@ namespace algo
                 if (a.id != b.id) return (a.id < b.id) ? -1 : 1;
                 return 0;
             }
+
+            static int Key(const PickupItem& item)
+            {
+                return item.id;
+            }
         };
     }
 
@@ -50,7 +56,11 @@ namespace algo
 
         int width = budget + 1;
         int* dp = new int[(m + 1) * width];
-        for (int b = 0; b < width; ++b) dp[b] = 0;   // row 0: no items, no benefit
+        for (int b = 0; b < width; ++b)
+        {
+            dp[b] = 0;   // row 0: no items, no benefit
+            if (trace != nullptr) trace->Record(TraceOp::DpCell, 0, b, 0.0, lines::knapsack::kBase);
+        }
 
         for (int i = 1; i <= m; ++i)
         {
@@ -69,7 +79,7 @@ namespace algo
                 row[b] = best;
 
                 if (stats != nullptr) ++stats->dpStates;
-                if (trace != nullptr) trace->Record(TraceOp::DpCell, i, b, static_cast<double>(best));
+                if (trace != nullptr) trace->Record(TraceOp::DpCell, i, b, static_cast<double>(best), lines::knapsack::kCell);
             }
         }
 
@@ -84,7 +94,7 @@ namespace algo
                 result.selectedIds.Push(item.id);
                 result.totalCost += item.cost;
                 b -= item.cost;
-                if (trace != nullptr) trace->Record(TraceOp::Place, i, item.id);
+                if (trace != nullptr) trace->Record(TraceOp::Place, i, item.id, 0.0, lines::knapsack::kTake);
             }
         }
         result.totalBenefit = dp[m * width + budget];
@@ -137,7 +147,7 @@ namespace algo
                 // Rule 1: free and useful -- always take, before ranking.
                 result.selectedIds.Push(item.id);
                 result.totalBenefit += item.benefit;
-                if (trace != nullptr) trace->Record(TraceOp::Place, i, item.id);
+                if (trace != nullptr) trace->Record(TraceOp::Place, i, item.id, 0.0, lines::greedy::kFree);
                 continue;
             }
             ranked.Push(item);
@@ -151,14 +161,14 @@ namespace algo
             const PickupItem& item = ranked[i];
             if (item.cost > remaining)
             {
-                if (trace != nullptr) trace->Record(TraceOp::Reject, item.id, -1, 0.0);
+                if (trace != nullptr) trace->Record(TraceOp::Reject, item.id, -1, 0.0, lines::greedy::kSkip);
                 continue;
             }
             remaining -= item.cost;
             result.selectedIds.Push(item.id);
             result.totalCost += item.cost;
             result.totalBenefit += item.benefit;
-            if (trace != nullptr) trace->Record(TraceOp::Place, i, item.id);
+            if (trace != nullptr) trace->Record(TraceOp::Place, i, item.id, 0.0, lines::greedy::kTake);
         }
 
         SortSelectedIds(&result);

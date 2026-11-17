@@ -6,6 +6,9 @@
 //   2. a full championship (C1 -> C2 -> C3), printing each race's event
 //      log and results, then the standings by Merge, Quick and Heap Sort
 //      and the top 3 by the size-k heap.
+//   3. Phase 4: every Algorithm Lab module's trace on the loaded circuit
+//      (sorts rank the final standings), then the backtracking generator's
+//      attempts, its track saved, reloaded and run through the validator.
 #include "../src/api/SmartRaceApi.h"
 
 #include <cstdio>
@@ -153,6 +156,81 @@ namespace
     }
 }
 
+namespace
+{
+    const char* const kLabNames[13] =
+    {
+        "BFS", "DFS", "Dijkstra", "A*", "Kruskal", "TrackGenerator", "KnapsackDp", "GreedyPickup",
+        "RefuelDp", "MergeSort", "QuickSort", "HeapSort", "EventQueue",
+    };
+
+    void PrintLab()
+    {
+        printf("================================================================\n");
+        printf("ALGORITHM LAB on %s (sorts rank the final standings)\n", ApiCircuitName(0));
+        if (ApiLoadCircuit(0) != ApiStatus::Ok)
+        {
+            printf("ApiLoadCircuit failed: %s\n", ApiLastError());
+            return;
+        }
+
+        LabInput input = ApiLabDefaultInput();
+        for (int i = 0; i <= static_cast<int>(LabAlgo::EventQueue); ++i)
+        {
+            LabAlgo algo = static_cast<LabAlgo>(i);
+            if (ApiLabRun(algo, input) != ApiStatus::Ok)
+            {
+                printf("  %-14s failed: %s\n", kLabNames[i], ApiLastError());
+                continue;
+            }
+            int steps = ApiLabStepCount();
+            LabFrame last = ApiLabFrame(steps - 1);
+            PseudocodeView code = ApiLabPseudocode(algo);
+            const char* lastLine = (last.line >= 0 && last.line < code.lines.count) ? code.lines[last.line] : "?";
+            printf("  %-14s %6d steps  last line %2d: %s\n", kLabNames[i], steps, last.line, lastLine);
+            printf("  %-14s %s\n", "", ApiLabResultText());
+        }
+    }
+
+    void PrintGenerator()
+    {
+        printf("================================================================\n");
+        printf("TRACK GENERATOR (seed 1) -> build/generated_demo.trk -> validator\n");
+
+        LabInput input = ApiLabDefaultInput();
+        if (ApiLabRun(LabAlgo::TrackGenerator, input) != ApiStatus::Ok)
+        {
+            printf("ApiLabRun failed: %s\n", ApiLastError());
+            return;
+        }
+
+        GeneratorReportView report = ApiLabGeneratorReport();
+        for (int i = 0; i < report.attempts.count; ++i)
+        {
+            const GeneratorAttemptView& a = report.attempts[i];
+            printf("  attempt %d: %s  (%lld nodes explored, %lld branches pruned)  %s\n", a.attempt,
+                a.accepted ? "ACCEPTED" : "rejected", a.nodesExplored, a.prunedBranches, a.reason);
+        }
+        if (report.acceptedAttempt < 0) return;
+
+        if (ApiLabSaveGenerated("build/generated_demo.trk") != ApiStatus::Ok
+            || ApiLoadCircuitFile("build/generated_demo.trk") != ApiStatus::Ok)
+        {
+            printf("save/reload failed: %s\n", ApiLastError());
+            return;
+        }
+
+        TrackInfo info = ApiGetTrackInfo();
+        printf("  reloaded \"%s\": %d laps\n", info.name, info.laps);
+        ValidationView v = ApiValidateTrack();
+        for (int i = 0; i < v.checks.count; ++i)
+        {
+            printf("    [%s] %-28s %s\n", v.checks[i].passed ? "ok" : "XX", v.checks[i].name, v.checks[i].detail);
+        }
+        printf("  validator: %s\n", v.passed ? "PASSED" : "FAILED");
+    }
+}
+
 int main()
 {
     if (ApiInit("data") != ApiStatus::Ok)
@@ -213,6 +291,9 @@ int main()
         StandingsView s = ApiStandings(SortMethod::Merge);
         printf("\nCHAMPION: %s (racer %d)\n", s.rows.count > 0 ? s.rows[0].name : "?", final.championId);
     }
+
+    PrintLab();
+    PrintGenerator();
 
     ApiShutdown();
     return 0;
