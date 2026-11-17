@@ -234,6 +234,42 @@ namespace algo
         return true;
     }
 
+    RouteCompareResult CompareLapRoutes(const model::Graph& graph, int currentVertex, int lastCompletedCheckpoint,
+        int finishVertex, const model::Weights& evalWeights, const model::CostReferences& refs, RouteAlgo algo)
+    {
+        RouteCompareResult result;
+
+        static const char* const kPresetNames[4] = { "Balanced", "Speed", "Economy", "Safety" };
+        static const model::Preset kPresets[4] =
+        {
+            model::Preset::Balanced, model::Preset::Speed, model::Preset::Economy, model::Preset::Safety,
+        };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            model::Weights w = model::WeightsForPreset(kPresets[i]);
+            PlanResult plan = PlanLap(graph, currentVertex, lastCompletedCheckpoint, finishVertex, w, refs, algo);
+            if (!plan.found) continue;
+
+            bool duplicate = false;
+            for (int s = 0; s < result.candidates.Size() && !duplicate; ++s)
+            {
+                if (SameEdgeSequence(result.candidates[s]->edgePath, plan.edgePath)) duplicate = true;
+            }
+            if (duplicate) continue;
+
+            RouteCandidate* candidate = new RouteCandidate();
+            candidate->label.Set(kPresetNames[i]);
+            candidate->found = true;
+            candidate->presetIndex = static_cast<int>(kPresets[i]);
+            for (int k = 0; k < plan.vertexPath.Size(); ++k) candidate->vertexPath.Push(plan.vertexPath[k]);
+            for (int k = 0; k < plan.edgePath.Size(); ++k) candidate->edgePath.Push(plan.edgePath[k]);
+            EvaluateCandidateUnder(graph, evalWeights, refs, candidate);
+            result.candidates.Push(candidate);
+        }
+        return result;
+    }
+
     RouteCompareResult CompareRoutes(const model::Graph& graph, int source, int target,
         const model::Weights& evalWeights, const model::CostReferences& refs,
         AlgoStats* stats, Trace* trace)
@@ -268,6 +304,7 @@ namespace algo
             RouteCandidate* candidate = new RouteCandidate();
             candidate->label.Set(kPresetNames[i]);
             candidate->found = true;
+            candidate->presetIndex = static_cast<int>(kPresets[i]);
             for (int k = 0; k < path.vertexPath.Size(); ++k) candidate->vertexPath.Push(path.vertexPath[k]);
             for (int k = 0; k < path.edgePath.Size(); ++k) candidate->edgePath.Push(path.edgePath[k]);
             EvaluateCandidateUnder(graph, evalWeights, refs, candidate);

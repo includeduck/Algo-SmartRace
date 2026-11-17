@@ -142,8 +142,10 @@ powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Section BCS-5A -Veri
 
 ## API status (for the GUI)
 
-`SmartRaceApi.h` is **v1.0 and frozen** (`SMARTRACE_API_VERSION 10`): from
-here on, changes are additive only. Everything the five screens need is
+`SmartRaceApi.h` is **v1.1** (`SMARTRACE_API_VERSION 11`). v1.0 was frozen;
+v1.1 only adds functions and appends struct fields (answering the GUI's
+handoff requests H1-H3, H7, H8 -- see `docs/gui-backend-handoff.md`), so
+existing GUI code compiles unchanged. Everything the five screens need is
 real: circuits and validation, races, resource planning, the championship,
 and the Algorithm Lab (`ApiLabRun` -> `ApiLabFrame(step)` for any step,
 with pseudocode lines, counters and per-vertex/edge/cell state), including

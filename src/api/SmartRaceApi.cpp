@@ -13,6 +13,8 @@
 #include "../algo/Bfs.h"
 #include "../algo/Dfs.h"
 #include "../algo/RoutePlanner.h"
+#include "../algo/Dijkstra.h"
+#include "../algo/AStar.h"
 #include "../sim/RaceEngine.h"
 #include "../sim/ChampionshipManager.h"
 #include "../sim/ResourcePlanner.h"
@@ -90,6 +92,62 @@ namespace
     algo::PlanResult g_lastPlan;
     algo::RouteCompareResult g_lastCompare;
     DynArray<RouteCandidateView> g_lastCompareViews;
+
+    // v1.1
+    algo::RouteCompareResult g_lastRaceCompare;
+    DynArray<RouteCandidateView> g_lastRaceCompareViews;
+    algo::PathResult g_lastRoute;
+    DynArray<double> g_edgeCosts;
+
+    RouteView EmptyRouteView()
+    {
+        RouteView view;
+        view.found = false;
+        view.blockedLegIndex = -1;
+        view.vertexPath.data = nullptr;
+        view.vertexPath.count = 0;
+        view.edgePath.data = nullptr;
+        view.edgePath.count = 0;
+        view.totalCost = 0.0;
+        view.totalDistance = 0.0;
+        view.totalTime = 0.0;
+        view.totalFuel = 0.0;
+        view.expanded = 0;
+        view.relaxed = 0;
+        view.heapPushes = 0;
+        view.heapPops = 0;
+        return view;
+    }
+
+    void CopyCounters(const algo::AlgoStats& stats, RouteView* view)
+    {
+        view->expanded = stats.verticesVisited;
+        view->relaxed = stats.edgesRelaxed;
+        view->heapPushes = stats.heapPushes;
+        view->heapPops = stats.heapPops;
+    }
+
+    void BuildCandidateViews(const algo::RouteCompareResult& result, DynArray<RouteCandidateView>* views)
+    {
+        views->Clear();
+        for (int i = 0; i < result.candidates.Size(); ++i)
+        {
+            const algo::RouteCandidate* c = result.candidates[i];
+            RouteCandidateView cv;
+            cv.label = c->label.CStr();
+            cv.found = c->found;
+            cv.vertexPath.data = c->vertexPath.Data();
+            cv.vertexPath.count = c->vertexPath.Size();
+            cv.totalCost = c->totalCost;
+            cv.totalDistance = c->totalDistance;
+            cv.totalTime = c->totalTime;
+            cv.totalFuel = c->totalFuel;
+            cv.edgePath.data = c->edgePath.Data();
+            cv.edgePath.count = c->edgePath.Size();
+            cv.sourcePreset = c->presetIndex;
+            views->Push(cv);
+        }
+    }
 
     // The real race engine (Phase 2).
     sim::RaceEngine* g_engine = nullptr;
@@ -293,7 +351,7 @@ namespace
         origin.lastCompletedCheckpoint = 0;
         origin.extraLaps = g_settings.laps - 1;
         origin.fuelTenths = Rules::kMaxFuelTenths;
-        origin.nitroCharges = Rules::kDefaultStartNitroCharges;
+        origin.nitroCharges = g_settings.startNitroCharges;
 
         if (g_engine == nullptr || g_raceOver) return origin;
 
@@ -905,17 +963,7 @@ DeadEndsView ApiRunDeadEnds()
 
 RouteView ApiPlanLap(Preset preset, RouteAlgo routeAlgo)
 {
-    RouteView view;
-    view.found = false;
-    view.blockedLegIndex = -1;
-    view.vertexPath.data = nullptr;
-    view.vertexPath.count = 0;
-    view.edgePath.data = nullptr;
-    view.edgePath.count = 0;
-    view.totalCost = 0.0;
-    view.totalDistance = 0.0;
-    view.totalTime = 0.0;
-    view.totalFuel = 0.0;
+    RouteView view = EmptyRouteView();
 
     if (!g_circuitLoaded)
     {
@@ -929,8 +977,10 @@ RouteView ApiPlanLap(Preset preset, RouteAlgo routeAlgo)
     }
 
     model::Weights w = model::WeightsForPreset(ToModelPreset(preset));
+    algo::AlgoStats stats;
     g_lastPlan = algo::PlanLap(*g_graph, g_startVertex, 0, g_finishVertex, w, g_costReferences,
-        ToAlgoRouteAlgo(routeAlgo));
+        ToAlgoRouteAlgo(routeAlgo), &stats);
+    CopyCounters(stats, &view);
 
     view.found = g_lastPlan.found;
     view.blockedLegIndex = g_lastPlan.blockedLegIndex;
@@ -964,25 +1014,111 @@ RouteCompareView ApiCompareRoutes(Preset evalPreset)
 
     model::Weights w = model::WeightsForPreset(ToModelPreset(evalPreset));
     g_lastCompare = algo::CompareRoutes(*g_graph, g_startVertex, g_finishVertex, w, g_costReferences);
-
-    g_lastCompareViews.Clear();
-    for (int i = 0; i < g_lastCompare.candidates.Size(); ++i)
-    {
-        const algo::RouteCandidate* c = g_lastCompare.candidates[i];
-        RouteCandidateView cv;
-        cv.label = c->label.CStr();
-        cv.found = c->found;
-        cv.vertexPath.data = c->vertexPath.Data();
-        cv.vertexPath.count = c->vertexPath.Size();
-        cv.totalCost = c->totalCost;
-        cv.totalDistance = c->totalDistance;
-        cv.totalTime = c->totalTime;
-        cv.totalFuel = c->totalFuel;
-        g_lastCompareViews.Push(cv);
-    }
+    BuildCandidateViews(g_lastCompare, &g_lastCompareViews);
 
     view.candidates.data = g_lastCompareViews.Data();
     view.candidates.count = g_lastCompareViews.Size();
+    return view;
+}
+
+RouteCompareView ApiCompareRaceRoutes(Preset evalPreset)
+{
+    RouteCompareView view;
+    view.candidates.data = nullptr;
+    view.candidates.count = 0;
+
+    if (!g_circuitLoaded)
+    {
+        SetError("no circuit loaded");
+        return view;
+    }
+    if (g_startVertex < 0 || g_finishVertex < 0)
+    {
+        SetError("circuit has no Start/Finish vertex");
+        return view;
+    }
+
+    PlannerOrigin origin = HumanOrigin();
+    model::Weights w = model::WeightsForPreset(ToModelPreset(evalPreset));
+    g_lastRaceCompare = algo::CompareLapRoutes(*g_graph, origin.vertex, origin.lastCompletedCheckpoint,
+        g_finishVertex, w, g_costReferences, algo::RouteAlgo::AStar);
+    BuildCandidateViews(g_lastRaceCompare, &g_lastRaceCompareViews);
+
+    if (g_lastRaceCompareViews.Size() == 0) SetError("no lap route from the current position under any preset");
+    view.candidates.data = g_lastRaceCompareViews.Data();
+    view.candidates.count = g_lastRaceCompareViews.Size();
+    return view;
+}
+
+RouteView ApiPlanRoute(int source, int target, Preset preset, RouteAlgo routeAlgo)
+{
+    RouteView view = EmptyRouteView();
+
+    if (!g_circuitLoaded)
+    {
+        SetError("no circuit loaded");
+        return view;
+    }
+    int n = g_graph->VertexCount();
+    if (source < 0 || source >= n || target < 0 || target >= n)
+    {
+        SetError("source/target is not a vertex of this circuit");
+        view.blockedLegIndex = 0;
+        return view;
+    }
+
+    model::Weights w = model::WeightsForPreset(ToModelPreset(preset));
+    algo::AlgoStats stats;
+    if (routeAlgo == RouteAlgo::AStar)
+    {
+        double scale = algo::ComputeHeuristicScale(*g_graph, w, g_costReferences);
+        g_lastRoute = algo::AStar(*g_graph, source, target, w, g_costReferences, scale, &stats);
+    }
+    else
+    {
+        g_lastRoute = algo::Dijkstra(*g_graph, source, target, w, g_costReferences, &stats);
+    }
+    CopyCounters(stats, &view);
+
+    view.found = g_lastRoute.found;
+    if (!view.found)
+    {
+        view.blockedLegIndex = 0;
+        SetError("target is not reachable from source on the current roads");
+        return view;
+    }
+    view.vertexPath.data = g_lastRoute.vertexPath.Data();
+    view.vertexPath.count = g_lastRoute.vertexPath.Size();
+    view.edgePath.data = g_lastRoute.edgePath.Data();
+    view.edgePath.count = g_lastRoute.edgePath.Size();
+    view.totalCost = g_lastRoute.totalCost;
+    view.totalDistance = g_lastRoute.totalDistance;
+    view.totalTime = g_lastRoute.totalTime;
+    view.totalFuel = g_lastRoute.totalFuel;
+    return view;
+}
+
+ArrayView<double> ApiEdgeCosts(Preset preset)
+{
+    ArrayView<double> view;
+    view.data = nullptr;
+    view.count = 0;
+
+    if (!g_circuitLoaded)
+    {
+        SetError("no circuit loaded");
+        return view;
+    }
+
+    model::Weights w = model::WeightsForPreset(ToModelPreset(preset));
+    g_edgeCosts.Clear();
+    for (int e = 0; e < g_graph->EdgeCount(); ++e)
+    {
+        double cost = g_graph->IsTraversable(e) ? model::EdgeCost(*g_graph, e, w, g_costReferences) : -1.0;
+        g_edgeCosts.Push(cost);
+    }
+    view.data = g_edgeCosts.Data();
+    view.count = g_edgeCosts.Size();
     return view;
 }
 
@@ -1410,5 +1546,37 @@ namespace api_internal
     void BuildGraphViews(const model::Graph& graph, DynArray<VertexView>* vertices, DynArray<EdgeView>* edges)
     {
         BuildViewsOf(graph, vertices, edges);
+    }
+
+    bool RaceRunning()
+    {
+        return g_engine != nullptr && !g_raceOver;
+    }
+
+    PlannerState HumanPlannerState()
+    {
+        PlannerOrigin o = ::HumanOrigin();
+        PlannerState s;
+        s.vertex = o.vertex;
+        s.lastCompletedCheckpoint = o.lastCompletedCheckpoint;
+        s.extraLaps = o.extraLaps;
+        s.fuelTenths = o.fuelTenths;
+        s.nitroCharges = o.nitroCharges;
+        s.live = RaceRunning();
+        s.raceTimeMs = s.live ? g_engine->NowMs() : 0;
+        return s;
+    }
+
+    PlannerState BaselinePlannerState()
+    {
+        PlannerState s;
+        s.vertex = g_startVertex;
+        s.lastCompletedCheckpoint = 0;
+        s.extraLaps = g_settings.laps - 1;
+        s.fuelTenths = Rules::kMaxFuelTenths;
+        s.nitroCharges = g_settings.startNitroCharges;
+        s.live = false;
+        s.raceTimeMs = 0;
+        return s;
     }
 }

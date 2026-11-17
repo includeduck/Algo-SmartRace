@@ -38,6 +38,60 @@ namespace
     algo::TraceCursor g_labCursor;
     char g_labResult[220] = "";
 
+    // v1.1 (H8): where the last run's data came from.
+    LabRunInfo g_labInfo = { LabDataSource::None, "", -1, -1 };
+    char g_labInfoText[200] = "";
+
+    void SetInfo(LabDataSource source, int sourceVertex, int targetVertex, const char* fmt, ...)
+    {
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(g_labInfoText, sizeof(g_labInfoText), fmt, args);
+        va_end(args);
+        g_labInfo.source = source;
+        g_labInfo.description = g_labInfoText;
+        g_labInfo.sourceVertex = sourceVertex;
+        g_labInfo.targetVertex = targetVertex;
+    }
+
+    // The track itself: live while a race runs (blocks, oil, outages).
+    void SetTrackInfo(int sourceVertex, int targetVertex)
+    {
+        if (api_internal::RaceRunning())
+        {
+            SetInfo(LabDataSource::LiveRace, sourceVertex, targetVertex,
+                "Live race track at %.1f s (current blocks and effects)",
+                api_internal::HumanPlannerState().raceTimeMs / 1000.0);
+        }
+        else
+        {
+            SetInfo(LabDataSource::LoadedCircuit, sourceVertex, targetVertex, "Loaded circuit (no race running)");
+        }
+    }
+
+    // H7: where pickups/refuelling are planned from.
+    api_internal::PlannerState PlannerFor(const LabInput& input)
+    {
+        if (input.useRaceState && api_internal::RaceRunning()) return api_internal::HumanPlannerState();
+        return api_internal::BaselinePlannerState();
+    }
+
+    void SetPlannerInfo(const api_internal::PlannerState& state, bool requestedLive)
+    {
+        if (state.live)
+        {
+            SetInfo(LabDataSource::LiveRace, state.vertex, -1,
+                "Live race at %.1f s: human at V%d, %.1f fuel units, %d nitro, %d more full lap(s)",
+                state.raceTimeMs / 1000.0, state.vertex, state.fuelTenths / 10.0, state.nitroCharges, state.extraLaps);
+        }
+        else
+        {
+            SetInfo(LabDataSource::LoadedCircuit, state.vertex, -1,
+                "Pre-race baseline: Start V%d, full tank, %d nitro, whole race%s",
+                state.vertex, state.nitroCharges, requestedLive ? " (live state requested, but no race is running)" : "");
+        }
+    }
+
     // The generator's candidate-road graph: Graph frames of a generator run
     // index into it rather than into the loaded circuit.
     model::Graph* g_labCandidateGraph = nullptr;
@@ -203,6 +257,7 @@ namespace
             }
         }
 
+        SetTrackInfo(source, (algo == LabAlgo::Dfs) ? -1 : target);
         Ready(algo::FrameKind::Graph, n, g.EdgeCount(), nullptr, 0, 0, 0);
         return ApiStatus::Ok;
     }
@@ -227,6 +282,7 @@ namespace
         algo::MstResult r = algo::Kruskal(g.VertexCount(), candidates.Data(), candidates.Size(), nullptr, &g_labTrace);
         SetResult("Kruskal: %d roads kept (total length %.0f), %d rejected as cycle-closing, %d component(s)",
             r.acceptedIds.Size(), r.totalWeight, r.rejectedIds.Size(), r.componentCount);
+        SetTrackInfo(-1, -1);
         Ready(algo::FrameKind::Graph, g.VertexCount(), g.EdgeCount(), nullptr, 0, 0, 0);
         return ApiStatus::Ok;
     }
@@ -268,6 +324,8 @@ namespace
                 attempts > 0 ? g_genReport.attempts[attempts - 1].reason : "?");
         }
 
+        SetInfo(LabDataSource::GeneratedTrack, -1, -1, "Track generator, seed %llu, %d vertices (candidate roads of %s)",
+            input.seed, input.generatorVertexCount, ok ? "the accepted attempt" : "the last attempt");
         Ready(algo::FrameKind::Graph, vertices, edges, nullptr, 0, 0, 0);
         return ApiStatus::Ok;
     }
@@ -284,8 +342,10 @@ namespace
         return item;
     }
 
-    // The pickups on the loaded circuit (as at the start of a race), or the
-    // brief's A/B/C example when asked for, or when the circuit offers none.
+    // The pickups the planner would offer -- from the pre-race baseline, or
+    // (useRaceState) from the human's live state, exactly as ApiPlanPickups
+    // computes them -- or the brief's A/B/C example when asked for, or when
+    // the circuit offers none.
     void BuildLabItems(const LabInput& input, DynArray<algo::PickupItem>* items, int* budget, bool* usedExample)
     {
         items->Clear();
@@ -295,29 +355,32 @@ namespace
         {
             const model::Graph& g = *api_internal::CurrentGraph();
             model::Weights weights = model::WeightsForPreset(api_internal::ToModelPreset(input.preset));
-            int start = api_internal::StartVertex();
             int finish = api_internal::FinishVertex();
+            api_internal::PlannerState state = PlannerFor(input);
 
             DynArray<int> raceV;
             DynArray<int> raceE;
             bool fuelNeeded = false;
-            if (sim::BuildRaceRoute(g, start, 0, api_internal::Laps() - 1, finish, weights, api_internal::CostRefs(), &raceV, &raceE))
+            if (sim::BuildRaceRoute(g, state.vertex, state.lastCompletedCheckpoint, state.extraLaps, finish, weights,
+                api_internal::CostRefs(), &raceV, &raceE))
             {
                 algo::RefuelProblem problem;
-                sim::BuildRefuelProblem(g, raceV, raceE, Rules::kMaxFuelTenths, &problem);
+                sim::BuildRefuelProblem(g, raceV, raceE, state.fuelTenths, &problem);
                 fuelNeeded = !algo::PlanRefuelling(problem).feasible;
             }
 
             DynArray<int> lapV;
             DynArray<int> lapE;
             DynArray<sim::PickupInfo> info;
-            if (sim::BuildRaceRoute(g, start, 0, 0, finish, weights, api_internal::CostRefs(), &lapV, &lapE))
+            if (sim::BuildRaceRoute(g, state.vertex, state.lastCompletedCheckpoint, 0, finish, weights,
+                api_internal::CostRefs(), &lapV, &lapE))
             {
-                sim::BuildPickupItems(g, lapV, lapE, Rules::kDefaultStartNitroCharges, fuelNeeded, items, &info);
+                sim::BuildPickupItems(g, lapV, lapE, state.nitroCharges, fuelNeeded, items, &info);
             }
 
             if (items->Size() > 0)
             {
+                SetPlannerInfo(state, input.useRaceState);
                 *usedExample = false;
                 *budget = input.budgetTenthsSec;
                 if (*budget < 0) *budget = 0;
@@ -330,6 +393,15 @@ namespace
         items->Push(Item(1, 5, 24));
         items->Push(Item(2, 5, 24));
         *budget = 10;
+        if (input.useBriefExample)
+        {
+            SetInfo(LabDataSource::BriefExample, -1, -1, "The brief's A(6, 30), B(5, 24), C(5, 24) example, budget 10");
+        }
+        else
+        {
+            SetInfo(LabDataSource::BriefExampleFallback, -1, -1,
+                "No pickups are on offer from here, so the brief's A/B/C example (budget 10) was used instead");
+        }
     }
 
     ApiStatus RunKnapsack(LabAlgo algo, const LabInput& input)
@@ -367,12 +439,27 @@ namespace
         int start = api_internal::StartVertex();
         int finish = api_internal::FinishVertex();
         int laps = api_internal::Laps();
+        api_internal::PlannerState state = PlannerFor(input);
+        SetPlannerInfo(state, input.useRaceState);
 
-        // A race route that passes the first active station every lap gives
-        // the DP real choices; fall back to the plain route without one.
+        // Live (H7): exactly ApiPlanRefuel's problem -- the rest of the race
+        // from the human's position with the human's fuel.
         DynArray<int> vertices;
         DynArray<int> edges;
         bool built = false;
+        if (state.live)
+        {
+            if (!sim::BuildRaceRoute(g, state.vertex, state.lastCompletedCheckpoint, state.extraLaps, finish, weights,
+                api_internal::CostRefs(), &vertices, &edges))
+            {
+                api_internal::SetError("no route from the human's current position");
+                return ApiStatus::Infeasible;
+            }
+            built = true;
+        }
+
+        // Baseline: a race route that passes the first active station every
+        // lap gives the DP real choices; fall back to the plain route.
         for (int s = 0; s < g.VertexCount() && !built; ++s)
         {
             const model::Vertex& v = g.GetVertex(s);
@@ -393,7 +480,7 @@ namespace
         }
 
         algo::RefuelProblem problem;
-        sim::BuildRefuelProblem(g, vertices, edges, Rules::kMaxFuelTenths, &problem);
+        sim::BuildRefuelProblem(g, vertices, edges, state.fuelTenths, &problem);
         algo::RefuelPlan plan = algo::PlanRefuelling(problem, nullptr, &g_labTrace);
 
         if (plan.feasible)
@@ -440,6 +527,8 @@ namespace
             {
                 algo::HeapSort<model::ChampionshipEntry, algo::StandingOrder>(work.Data(), work.Size(), &stats, &g_labTrace);
             }
+            SetInfo(LabDataSource::ChampionshipStandings, -1, -1, "Live championship standings after %d race(s)",
+                api_internal::Championship().RacesCompleted());
             SetResult("Ranked the %d championship entries (keys are racer ids): %lld comparisons, %lld moves/swaps",
                 work.Size(), stats.comparisons, stats.swaps);
         }
@@ -470,6 +559,8 @@ namespace
             {
                 algo::HeapSort<int, IntKeyOrder>(work.Data(), n, &stats, &g_labTrace);
             }
+            SetInfo(LabDataSource::RandomKeys, -1, -1, "%d random keys 0..99 from seed %llu (no championship running)",
+                n, input.seed);
             SetResult("Sorted %d random keys (no championship running): %lld comparisons, %lld moves/swaps",
                 n, stats.comparisons, stats.swaps);
         }
@@ -627,6 +718,8 @@ namespace
 
         SetResult("Event queue: %d events scheduled, %d applied in (time, priority, sequence) order, %d cancelled",
             g_labEvents.Size(), sink.applied, boosterExpiries.Size());
+        SetInfo(LabDataSource::CircuitEvents, -1, -1, "The circuit's %d scripted event(s) plus their expiries",
+            track.events.Size());
         Ready(algo::FrameKind::Events, 0, 0, nullptr, 0, 0, 0);
         return ApiStatus::Ok;
     }
@@ -642,6 +735,7 @@ namespace api_internal
         g_labUsesOwnGraph = false;
         g_labEvents.Clear();
         g_labResult[0] = '\0';
+        SetInfo(LabDataSource::None, -1, -1, "");
     }
 
     void ShutdownLab()
@@ -667,6 +761,7 @@ LabInput ApiLabDefaultInput()
     input.arraySize = 12;
     input.seed = 1;
     input.generatorVertexCount = 28;
+    input.useRaceState = false;
     return input;
 }
 
@@ -800,6 +895,12 @@ PseudocodeView ApiLabPseudocode(LabAlgo algo)
     view.lines.data = lines;
     view.lines.count = count;
     return view;
+}
+
+LabRunInfo ApiLabRunInfo()
+{
+    g_labInfo.description = g_labInfoText;
+    return g_labInfo;
 }
 
 const char* ApiLabResultText()

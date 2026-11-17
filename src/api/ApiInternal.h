@@ -26,6 +26,24 @@ namespace api_internal
     model::Preset ToModelPreset(Preset preset);
     void BuildGraphViews(const model::Graph& graph, DynArray<VertexView>* vertices, DynArray<EdgeView>* edges);
 
+    // Where the resource planners plan from (v1.1: shared with the Lab).
+    struct PlannerState
+    {
+        int vertex;
+        int lastCompletedCheckpoint;
+        int extraLaps;        // full laps after the current one
+        int fuelTenths;
+        int nitroCharges;
+        bool live;             // true = the human's state in a running race
+        int raceTimeMs;         // race clock when live, 0 otherwise
+    };
+
+    // The human's live state while a race is running, else the baseline.
+    PlannerState HumanPlannerState();
+    // Start, full tank, the configured starting nitro, the whole race.
+    PlannerState BaselinePlannerState();
+    bool RaceRunning();
+
     // Called by ApiLoadCircuit* so the Lab drops results that index into a
     // graph that is about to change. Keeps the last generated track, so it
     // can still be saved after loading another circuit.

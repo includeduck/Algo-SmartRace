@@ -200,6 +200,12 @@ struct RouteView
     ArrayView<int> vertexPath;
     ArrayView<int> edgePath;
     double totalCost, totalDistance, totalTime, totalFuel;
+
+    // v1.1: the search's own counters, summed over every leg.
+    long long expanded;        // vertices settled (popped for the first time)
+    long long relaxed;          // successful edge relaxations
+    long long heapPushes;
+    long long heapPops;
 };
 
 struct RouteCandidateView
@@ -208,6 +214,14 @@ struct RouteCandidateView
     bool found;
     ArrayView<int> vertexPath;
     double totalCost, totalDistance, totalTime, totalFuel;   // all under the comparison's evalPreset
+
+    // v1.1 (H1/H3): the exact roads, in order (edgePath.count ==
+    // vertexPath.count - 1), and the Preset whose optimal route this is, as
+    // static_cast<int>(Preset); -1 for a DFS alternative. Selecting that
+    // preset (ApiCmdPreset in a race, Settings.defaultPreset before one)
+    // makes the autopilot drive this route.
+    ArrayView<int> edgePath;
+    int sourcePreset;
 };
 
 struct RouteCompareView
@@ -438,6 +452,13 @@ struct LabInput
     int arraySize;                           // sorts without a championship: random keys (2..64)
     unsigned long long seed;                   // sorts' random keys; the generator's seed
     int generatorVertexCount;                    // generator: vertices to place
+
+    // v1.1 (H7): Knapsack DP / Greedy / Refuel DP plan from the human's LIVE
+    // race state (current vertex, fuel, nitro charges, remaining laps)
+    // while a race is running -- the same origin ApiPlanPickups and
+    // ApiPlanRefuel use. false (the default) = the pre-race baseline:
+    // Start, full tank, whole race. ApiLabRunInfo().source says which ran.
+    bool useRaceState;
 };
 
 // The algorithm's visible state after one step. Vertex/edge codes for the
@@ -490,6 +511,29 @@ struct LabFrame
     long long placements;
     long long backtracks;
     long long rejections;
+};
+
+// v1.1 (H8): where the data of the last ApiLabRun came from.
+enum class LabDataSource
+{
+    None,                    // nothing run yet (or the run failed)
+    LoadedCircuit,            // the loaded circuit, before any race
+    LiveRace,                  // the loaded circuit during a race: live effects, and for
+                                //   pickups/refuel (useRaceState) the human's live state
+    BriefExample,                // knapsack/greedy: the brief's A/B/C items, as requested
+    BriefExampleFallback,          // knapsack/greedy: the circuit offered no pickups, so A/B/C was used
+    ChampionshipStandings,           // sorts: the live championship entries
+    RandomKeys,                        // sorts: random keys (no championship running)
+    GeneratedTrack,                      // the track generator's candidate roads
+    CircuitEvents,                         // event queue: the circuit's scripted events
+};
+
+struct LabRunInfo
+{
+    LabDataSource source;
+    const char* description;   // one line for display, e.g. "Live race at 31.2 s: from V7, 41.0 units, 2 laps left"
+    int sourceVertex;            // graph searches: the source actually used (defaults resolved), else -1
+    int targetVertex;              // BFS/Dijkstra/A*: the target actually used, else -1
 };
 
 struct PseudocodeView

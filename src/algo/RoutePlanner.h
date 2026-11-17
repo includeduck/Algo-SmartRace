@@ -72,12 +72,13 @@ namespace algo
     struct RouteCandidate
     {
         RouteCandidate()
-            : found(false), totalCost(0.0), totalDistance(0.0), totalTime(0.0), totalFuel(0.0)
+            : found(false), presetIndex(-1), totalCost(0.0), totalDistance(0.0), totalTime(0.0), totalFuel(0.0)
         {
         }
 
         String label;    // e.g. "Balanced", "Speed", "Alternative 1"
         bool found;
+        int presetIndex;  // the model::Preset whose optimal route this is, -1 for a DFS alternative
         DynArray<int> vertexPath;
         DynArray<int> edgePath;
         double totalCost, totalDistance, totalTime, totalFuel;   // all under the comparison's evalWeights
@@ -108,6 +109,16 @@ namespace algo
     // apples even though each preset route was found by optimizing its own
     // weights (Project.pdf section 5.2: "compare at least two candidate
     // routes").
+    // Candidate RACE laps (API v1.1, GUI request H1): from `currentVertex`
+    // through every checkpoint after `lastCompletedCheckpoint`, in order, to
+    // the finish -- one PlanLap per game preset (Balanced, Speed, Economy,
+    // Safety) with `algo`, de-duplicated by identical road sequence. Unlike
+    // CompareRoutes these never skip a checkpoint, so each one is a lap the
+    // autopilot really drives under its preset. Totals are evaluated under
+    // `evalWeights`, as in CompareRoutes.
+    RouteCompareResult CompareLapRoutes(const model::Graph& graph, int currentVertex, int lastCompletedCheckpoint,
+        int finishVertex, const model::Weights& evalWeights, const model::CostReferences& refs, RouteAlgo algo);
+
     RouteCompareResult CompareRoutes(const model::Graph& graph, int source, int target,
         const model::Weights& evalWeights, const model::CostReferences& refs,
         AlgoStats* stats = nullptr, Trace* trace = nullptr);

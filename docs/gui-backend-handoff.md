@@ -68,3 +68,26 @@ When the partner changes the API, inspect the diff against this baseline and
 update only affected adapters/screens. Keep algorithms, race rules, authored
 tracks, experiments and backend tests with Person 1. Advanced challenges remain
 bonus unless the instructor says otherwise.
+
+## Backend response: API v1.1 (Wasay, 17 Nov 2026)
+
+All open requests are answered in `SMARTRACE_API_VERSION 11`. Everything is
+additive: no existing function changed signature or meaning, and new struct
+fields are appended, so `= {}` initialisation and the current screens keep
+compiling (verified: Debug + Release build, `smartrace_gui_checks` 134/134,
+`smartrace_tests` 129/129). Nothing in `src/app/` was edited; wiring these
+in is yours.
+
+| ID | Answer | How to use it |
+|---|---|---|
+| H1 | `RouteCompareView ApiCompareRaceRoutes(Preset evalPreset)` -- candidate **race laps** from the human's position (Start before a race) through every remaining checkpoint in order, one per preset, planned with A* exactly as the autopilot plans them, de-duplicated, scored under `evalPreset`. | Each `RouteCandidateView.sourcePreset` is the `Preset` (as int) that drives it. To make a candidate the race plan: `ApiCmdPreset((Preset)c.sourcePreset)` during a race, or set `Settings.defaultPreset` before `ApiRaceStart`. A test checks every candidate equals `ApiPlanLap(thatPreset, AStar)`. `ApiCompareRoutes` keeps its unrestricted exploration meaning. |
+| H2 | `RouteView ApiPlanRoute(int source, int target, Preset, RouteAlgo)` -- one structured search between any two vertices. | Same fields as `ApiPlanLap`. Bad ids or unreachable: `found=false`, `blockedLegIndex=0`, `ApiLastError()` set. `RouteView` now also carries `expanded`, `relaxed`, `heapPushes`, `heapPops` (filled by `ApiPlanLap` too). |
+| H3 | `ArrayView<double> ApiEdgeCosts(Preset)` -- per road (index = edge id) the exact cost the routers minimise, on the live graph; `-1` = blocked. `RouteCandidateView` gains `edgePath`. | Summing `ApiEdgeCosts` over a route's `edgePath` equals its `totalCost` (tested). Draw candidates road by road with `edgePath`; `sourcePreset` is `-1` for DFS alternatives. |
+| H7 | `LabInput.useRaceState` (default `false`). | `true` during a race makes Knapsack DP, Greedy and Refuel DP plan from the human's live vertex, fuel, nitro and remaining laps -- the same origin `ApiPlanPickups` / `ApiPlanRefuel` use. With no race running it falls back to the baseline and says so. |
+| H8 | `LabRunInfo ApiLabRunInfo()` -- `source` (`LabDataSource`: LoadedCircuit, LiveRace, BriefExample, BriefExampleFallback, ChampionshipStandings, RandomKeys, GeneratedTrack, CircuitEvents), a one-line `description`, and the `sourceVertex` / `targetVertex` actually used (defaults resolved). | Show a badge from `source` instead of parsing `ApiLabResultText()`. Valid until the next `ApiLabRun`. |
+
+Also changed since your baseline (v1.0.2, behaviour only): the human
+autopilot routes with A* (same optimal cost as Dijkstra), and scripted events
+aimed at the wrong kind of element are rejected and logged. The pre-race
+baseline for pickups now uses `Settings.startNitroCharges` instead of the
+fixed default.

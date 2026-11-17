@@ -61,9 +61,17 @@
 //     autopilot routes with A* (same optimal cost as Dijkstra); a scripted
 //     event whose target is the wrong kind of element (e.g. a station
 //     outage on a checkpoint) is rejected with a log line.
+//   v1.1 (additive only -- nothing existing changed meaning; answers the
+//     GUI handoff requests H1-H3, H7, H8): ApiCompareRaceRoutes (ordered
+//     race-lap candidates, H1); ApiPlanRoute (structured route between any
+//     two vertices, H2); ApiEdgeCosts and RouteCandidateView.edgePath /
+//     sourcePreset (H3); RouteView search counters; LabInput.useRaceState
+//     (live-state pickups/refuel in the Lab, H7); ApiLabRunInfo (structured
+//     data source of a Lab run, H8). New struct fields are appended, so
+//     code that value-initialises these structs keeps compiling.
 // ===========================================================================
 
-#define SMARTRACE_API_VERSION 10
+#define SMARTRACE_API_VERSION 11
 
 // ---------------------------------------------------------------------- //
 // Session / Main Menu
@@ -234,6 +242,10 @@ GraphView ApiLabGraph();
 
 PseudocodeView ApiLabPseudocode(LabAlgo algo);
 
+// v1.1 (H8). Where the last ApiLabRun's data came from, and the source/
+// target vertices it actually used. Valid until the next ApiLabRun.
+LabRunInfo ApiLabRunInfo();
+
 // A one-line summary of the last run's result (path cost, items chosen,
 // tree weight, accepted attempt, ...).
 const char* ApiLabResultText();
@@ -281,3 +293,29 @@ RouteView ApiPlanLap(Preset preset, RouteAlgo algo);
 // the comparison is apples to apples. Valid until the next
 // ApiCompareRoutes/ApiLoadCircuit* call.
 RouteCompareView ApiCompareRoutes(Preset evalPreset);
+
+// v1.1 (H1). Candidate RACE laps: from the human's position (the Start
+// before a race) through every remaining checkpoint IN ORDER to the
+// finish, one per preset (Balanced, Speed, Economy, Safety), planned with
+// A* exactly as the autopilot plans, de-duplicated (presets that pick the
+// same roads appear once, under the first preset's label). Totals are
+// scored under `evalPreset`. Each candidate's sourcePreset is the preset
+// that drives it: ApiCmdPreset(it) during a race, or Settings.defaultPreset
+// before one, makes it the race plan. Valid until the next
+// ApiCompareRaceRoutes/ApiLoadCircuit*/ApiRaceStep call.
+RouteCompareView ApiCompareRaceRoutes(Preset evalPreset);
+
+// v1.1 (H2). One shortest route between ANY two vertices under `preset`
+// with Dijkstra or A* (a single search -- checkpoints are not forced;
+// that is ApiPlanLap's job). found=false with ApiLastError() set for an
+// unknown vertex or an unreachable target (blockedLegIndex is then 0).
+// source == target gives found=true, cost 0, one vertex, no roads. Valid
+// until the next ApiPlanRoute/ApiLoadCircuit* call.
+RouteView ApiPlanRoute(int source, int target, Preset preset, RouteAlgo algo);
+
+// v1.1 (H3). The cost every router minimises, per road, under `preset`, on
+// the CURRENT graph (live race effects included): index = edge id. A
+// blocked road is -1 (not traversable). Summing a route's roads gives its
+// totalCost. Valid until the next ApiEdgeCosts/ApiLoadCircuit*/ApiRaceStep
+// call.
+ArrayView<double> ApiEdgeCosts(Preset preset);

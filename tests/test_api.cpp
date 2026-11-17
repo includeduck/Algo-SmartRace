@@ -233,3 +233,260 @@ TEST(Api_SameSettingsTwice_SameResults)
     CHECK_EQ(count[0], count[1]);
     for (int i = 0; i < count[0] && i < 10; ++i) CHECK_EQ(times[0][i], times[1][i]);
 }
+
+// ---------------------------------------------------------------------- //
+// API v1.1 additions (GUI handoff requests H1-H3, H7, H8)
+// ---------------------------------------------------------------------- //
+
+namespace
+{
+    int VertexWithType(const GraphView& g, VertexType type)
+    {
+        for (int i = 0; i < g.vertices.count; ++i)
+        {
+            if (g.vertices[i].type == type) return i;
+        }
+        return -1;
+    }
+
+    int CheckpointVertexV(const GraphView& g, int order)
+    {
+        for (int i = 0; i < g.vertices.count; ++i)
+        {
+            if (g.vertices[i].checkpointOrder == order) return i;
+        }
+        return -1;
+    }
+
+    // Every road joins the two vertices around it in the path.
+    bool EdgesMatchVertices(const GraphView& g, const ArrayView<int>& vertices, const ArrayView<int>& edges)
+    {
+        if (vertices.count == 0) return edges.count == 0;
+        if (edges.count != vertices.count - 1) return false;
+        for (int i = 0; i < edges.count; ++i)
+        {
+            const EdgeView& e = g.edges[edges[i]];
+            int a = vertices[i];
+            int b = vertices[i + 1];
+            bool forward = (e.from == a && e.to == b);
+            bool backward = (!e.directed && e.from == b && e.to == a);
+            if (!forward && !backward) return false;
+        }
+        return true;
+    }
+
+    double SumCosts(const ArrayView<double>& costs, const ArrayView<int>& edges)
+    {
+        double sum = 0.0;
+        for (int i = 0; i < edges.count; ++i) sum += costs[edges[i]];
+        return sum;
+    }
+
+    bool Close(double a, double b)
+    {
+        double scale = fabs(a) > 1.0 ? fabs(a) : 1.0;
+        return fabs(a - b) <= 1e-9 * scale;
+    }
+
+    void StepUntil(int timeMs)
+    {
+        while (!ApiRaceOver() && ApiRaceSnapshot().timeMs < timeMs) ApiRaceStep(5);
+    }
+
+    bool IsAlternativeLabel(const char* label)
+    {
+        const char* prefix = "Alternative";
+        for (int i = 0; prefix[i] != '\0'; ++i)
+        {
+            if (label[i] != prefix[i]) return false;
+        }
+        return true;
+    }
+}
+
+TEST(ApiV11_PlanRoute_AnyTwoVertices_StructuredAndConsistent)
+{
+    CHECK(ApiInit("data") == ApiStatus::Ok);
+    CHECK(ApiLoadCircuit(0) == ApiStatus::Ok);
+    GraphView g = ApiGetGraph();
+    int start = VertexWithType(g, VertexType::Start);
+    int cp5 = CheckpointVertexV(g, 5);
+
+    RouteView d = ApiPlanRoute(start, cp5, Preset::Balanced, RouteAlgo::Dijkstra);
+    CHECK(d.found);
+    CHECK_EQ(d.blockedLegIndex, -1);
+    CHECK(d.expanded > 0 && d.relaxed > 0 && d.heapPushes > 0 && d.heapPops > 0);
+    CHECK(EdgesMatchVertices(g, d.vertexPath, d.edgePath));
+    CHECK_EQ(d.vertexPath[0], start);
+    CHECK_EQ(d.vertexPath[d.vertexPath.count - 1], cp5);
+    double dijkstraCost = d.totalCost;
+    long long dijkstraExpanded = d.expanded;
+
+    // H3: the per-road costs add up to exactly the optimised total.
+    ArrayView<double> costs = ApiEdgeCosts(Preset::Balanced);
+    CHECK_EQ(costs.count, g.edges.count);
+    CHECK(Close(SumCosts(costs, d.edgePath), dijkstraCost));
+
+    RouteView a = ApiPlanRoute(start, cp5, Preset::Balanced, RouteAlgo::AStar);
+    CHECK(a.found);
+    CHECK(Close(a.totalCost, dijkstraCost));
+    CHECK(a.expanded <= dijkstraExpanded);
+
+    RouteView same = ApiPlanRoute(cp5, cp5, Preset::Speed, RouteAlgo::Dijkstra);
+    CHECK(same.found);
+    CHECK_EQ(same.vertexPath.count, 1);
+    CHECK_EQ(same.edgePath.count, 0);
+    CHECK(Close(same.totalCost, 0.0));
+
+    RouteView bad = ApiPlanRoute(-1, 9999, Preset::Balanced, RouteAlgo::AStar);
+    CHECK(!bad.found);
+    CHECK_EQ(bad.blockedLegIndex, 0);
+    CHECK(HasText(ApiLastError()));
+
+    // ApiPlanLap now reports counters too.
+    RouteView lap = ApiPlanLap(Preset::Balanced, RouteAlgo::Dijkstra);
+    CHECK(lap.found && lap.expanded > 0 && lap.heapPops > 0);
+    ApiShutdown();
+}
+
+TEST(ApiV11_CompareRoutes_EdgePathsAndSourcePresets)
+{
+    CHECK(ApiInit("data") == ApiStatus::Ok);
+    for (int c = 0; c < 3; ++c)
+    {
+        CHECK(ApiLoadCircuit(c) == ApiStatus::Ok);
+        GraphView g = ApiGetGraph();
+        RouteCompareView cmp = ApiCompareRoutes(Preset::Balanced);
+        CHECK(cmp.candidates.count >= 2);
+        for (int i = 0; i < cmp.candidates.count; ++i)
+        {
+            const RouteCandidateView& cand = cmp.candidates[i];
+            CHECK(EdgesMatchVertices(g, cand.vertexPath, cand.edgePath));
+            if (IsAlternativeLabel(cand.label))
+            {
+                CHECK_EQ(cand.sourcePreset, -1);
+            }
+            else
+            {
+                CHECK(cand.sourcePreset >= 0 && cand.sourcePreset <= 3);
+            }
+        }
+    }
+    ApiShutdown();
+}
+
+TEST(ApiV11_CompareRaceRoutes_OrderedLapsDrivenByTheirPreset)
+{
+    CHECK(ApiInit("data") == ApiStatus::Ok);
+    CHECK(ApiLoadCircuit(0) == ApiStatus::Ok);   // Harbor: Safety picks a different lap
+    GraphView g = ApiGetGraph();
+    int start = VertexWithType(g, VertexType::Start);
+    int finish = VertexWithType(g, VertexType::Finish);
+
+    RouteCompareView cmp = ApiCompareRaceRoutes(Preset::Balanced);
+    CHECK(cmp.candidates.count >= 2);
+    int count = cmp.candidates.count;
+
+    for (int i = 0; i < count; ++i)
+    {
+        cmp = ApiCompareRaceRoutes(Preset::Balanced);   // re-read: ApiPlanLap below is a different call
+        ArrayView<double> costs = ApiEdgeCosts(Preset::Balanced);
+        const RouteCandidateView& cand = cmp.candidates[i];
+        CHECK(cand.found);
+        CHECK(EdgesMatchVertices(g, cand.vertexPath, cand.edgePath));
+        CHECK_EQ(cand.vertexPath[0], start);
+        CHECK_EQ(cand.vertexPath[cand.vertexPath.count - 1], finish);
+
+        // Checkpoints 1..10 are reached in order.
+        int next = 1;
+        for (int k = 0; k < cand.vertexPath.count; ++k)
+        {
+            if (g.vertices[cand.vertexPath[k]].checkpointOrder == next) ++next;
+        }
+        CHECK_EQ(next, 11);
+
+        CHECK(Close(SumCosts(costs, cand.edgePath), cand.totalCost));
+
+        // The candidate IS the lap the autopilot plans under its preset.
+        CHECK(cand.sourcePreset >= 0 && cand.sourcePreset <= 3);
+        RouteView lap = ApiPlanLap(static_cast<Preset>(cand.sourcePreset), RouteAlgo::AStar);
+        CHECK_EQ(lap.edgePath.count, cand.edgePath.count);
+        for (int k = 0; k < lap.edgePath.count && k < cand.edgePath.count; ++k) CHECK_EQ(lap.edgePath[k], cand.edgePath[k]);
+    }
+    ApiShutdown();
+}
+
+TEST(ApiV11_EdgeCosts_FollowLiveRaceEffects)
+{
+    CHECK(ApiInit("data") == ApiStatus::Ok);
+    CHECK(ApiLoadCircuit(0) == ApiStatus::Ok);
+    // Harbor's script: oil spill on road 3 at 15 s, road 0 blocked at 40 s.
+    double oilBefore = ApiEdgeCosts(Preset::Safety)[3];
+    CHECK(ApiEdgeCosts(Preset::Safety)[0] >= 0.0);
+
+    CHECK(ApiRaceStart() == ApiStatus::Ok);
+    StepUntil(16000);
+    CHECK(ApiEdgeCosts(Preset::Safety)[3] > oilBefore);
+    StepUntil(41000);
+    CHECK(ApiEdgeCosts(Preset::Safety)[0] < 0.0);   // blocked
+    ApiShutdown();
+}
+
+TEST(ApiV11_LabRunInfo_ReportsTheRealDataSource)
+{
+    CHECK(ApiInit("data") == ApiStatus::Ok);
+    CHECK(ApiLoadCircuit(0) == ApiStatus::Ok);
+    GraphView g = ApiGetGraph();
+    int start = VertexWithType(g, VertexType::Start);
+    int cp5 = CheckpointVertexV(g, 5);
+    LabInput input = ApiLabDefaultInput();
+    CHECK(!input.useRaceState);
+
+    CHECK(ApiLabRun(LabAlgo::Bfs, input) == ApiStatus::Ok);
+    LabRunInfo info = ApiLabRunInfo();
+    CHECK(info.source == LabDataSource::LoadedCircuit);
+    CHECK_EQ(info.sourceVertex, start);
+    CHECK_EQ(info.targetVertex, cp5);
+    CHECK(HasText(info.description));
+
+    input.useBriefExample = true;
+    CHECK(ApiLabRun(LabAlgo::KnapsackDp, input) == ApiStatus::Ok);
+    CHECK(ApiLabRunInfo().source == LabDataSource::BriefExample);
+    input.useBriefExample = false;
+    CHECK(ApiLabRun(LabAlgo::KnapsackDp, input) == ApiStatus::Ok);
+    CHECK(ApiLabRunInfo().source == LabDataSource::LoadedCircuit);
+
+    CHECK(ApiLabRun(LabAlgo::MergeSort, input) == ApiStatus::Ok);
+    CHECK(ApiLabRunInfo().source == LabDataSource::RandomKeys);
+    CHECK(ApiLabRun(LabAlgo::EventQueue, input) == ApiStatus::Ok);
+    CHECK(ApiLabRunInfo().source == LabDataSource::CircuitEvents);
+    CHECK(ApiLabRun(LabAlgo::TrackGenerator, input) == ApiStatus::Ok);
+    CHECK(ApiLabRunInfo().source == LabDataSource::GeneratedTrack);
+
+    // H7: live race state.
+    CHECK(ApiLoadCircuit(0) == ApiStatus::Ok);
+    CHECK(ApiRaceStart() == ApiStatus::Ok);
+    StepUntil(30000);
+
+    CHECK(ApiLabRun(LabAlgo::Dijkstra, input) == ApiStatus::Ok);
+    CHECK(ApiLabRunInfo().source == LabDataSource::LiveRace);   // live track effects
+
+    CHECK(ApiLabRun(LabAlgo::RefuelDp, input) == ApiStatus::Ok);
+    info = ApiLabRunInfo();
+    CHECK(info.source == LabDataSource::LoadedCircuit);          // baseline unless asked
+    CHECK_EQ(info.sourceVertex, start);
+
+    input.useRaceState = true;
+    CHECK(ApiLabRun(LabAlgo::RefuelDp, input) == ApiStatus::Ok);
+    info = ApiLabRunInfo();
+    CHECK(info.source == LabDataSource::LiveRace);
+    const RacerView* h = Human(ApiRaceSnapshot());
+    CHECK(h != nullptr);
+    if (h != nullptr && h->currentVertex >= 0) CHECK_EQ(info.sourceVertex, h->currentVertex);
+    CHECK(ApiLabStepCount() > 0);
+
+    CHECK(ApiLabRun(LabAlgo::GreedyPickup, input) == ApiStatus::Ok);
+    LabDataSource s = ApiLabRunInfo().source;
+    CHECK(s == LabDataSource::LiveRace || s == LabDataSource::BriefExampleFallback);
+    ApiShutdown();
+}
