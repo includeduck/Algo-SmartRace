@@ -51,4 +51,3 @@ Route objectives are combined into a documented nonnegative weighted scalar.
 Different presets may produce different routes; the GUI displays the backend
 answer and never assumes that A* always expands fewer vertices. Resource
 recommendations remain constrained by the configured race rules.
-
