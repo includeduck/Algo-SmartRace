@@ -1,0 +1,62 @@
+@startuml architecture
+!pragma layout smetana
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 12
+skinparam componentStyle rectangle
+skinparam ArrowColor #44546A
+skinparam ArrowFontSize 10
+skinparam ArrowFontColor #44546A
+skinparam packageBorderColor #7A8CA0
+skinparam packageFontSize 13
+skinparam rectangleBorderColor #5B6E84
+skinparam nodeBorderColor #5B6E84
+skinparam databaseBorderColor #5B6E84
+skinparam linetype ortho
+
+title Smart Racing Championship: system architecture
+
+package "Front ends  (executables)" as FE #F3F7FB {
+  rectangle "**smartrace** (GUI, Rayyan)\nsrc/app: App, AppState\nscreens: Menu/Settings, Explorer,\nRace, Results, Championship, Lab\nui: MapView, LabRenderers, Theme,\nWindowCanvas, Toast" as GUI #DCEAF7
+  rectangle "**smartrace_cli**\ncli/CliMain.cpp\n(text demo of every API call)" as CLI #DCEAF7
+  rectangle "**raylib 5.5 + raygui 4.0**\nthird_party/ (window, drawing,\nwidgets only)" as RL #EFEFEF
+}
+
+rectangle "**Public API boundary**  src/api/SmartRaceApi.h + ApiTypes.h  (v1.1)\nborrowed ArrayView results, ApiStatus + ApiLastError, commands ApiCmd*, Lab trace frames" as API #FFE9C7
+
+package "smartrace_core  (static library, no STL, hand-written)" as CORE #F7F9F2 {
+  rectangle "**api**\nSmartRaceApi.cpp (session, race,\nroutes, championship)\nLab.cpp (13 Lab modules,\ntrace recorder + cursor)" as APIIMPL #FFF4E0
+  rectangle "**sim**\nRaceEngine (20 ms ticks)\nEventQueue (min-heap)\nEffectManager, Strategies (3)\nResourcePlanner\nChampionshipManager\nTrackGenerator, TrackValidator" as SIM #E6F2DC
+  rectangle "**algo**\nBFS, DFS, Dijkstra, A*\nRoutePlanner (ordered laps)\nKnapsack DP + greedy, Refuel DP\nKruskal (union-find)\nMerge / Quick / Heap sort, top-k\nTrace, TraceCursor, Pseudocode" as ALGO #E6F2DC
+  rectangle "**model**\nGraph (adjacency lists,\nedge status), CostModel,\nRules, Records, Types" as MODEL #E6F2DC
+  rectangle "**io**\nTrackLoader\nTrackWriter" as IO #E6F2DC
+  rectangle "**core**\nds: DynArray, MinHeap, Queue,\nStack, LinkedList, UnionFind, Pool\nutil: String, Rng, Log, Timer" as COREDS #E6F2DC
+}
+
+database "data/\nC1-C3 .trk circuits\nevent scripts" as DATA #EFEFEF
+
+package "Verification and experiments" as VER #F3F3F3 {
+  rectangle "**smartrace_tests**\n129 tests, 28,480 checks" as TESTS #FFFFFF
+  rectangle "**smartrace_gui_checks / _smoke**\n238 contract + 72 rendering" as GCHK #FFFFFF
+  rectangle "**smartrace_bench**\n5 experiments -> results/*.csv\n(tools/plot_results.py -> charts)" as BENCH #FFFFFF
+}
+
+GUI --> RL : draws with
+GUI --> API : includes only this header
+CLI --> API : calls
+API --> APIIMPL : implemented by
+APIIMPL --> SIM : runs races,\nchampionship
+APIIMPL --> ALGO : Explorer queries,\nLab runs (traced)
+SIM --> ALGO : replanning,\nrefuel, sorting
+SIM --> IO : loads circuits
+ALGO --> MODEL : reads graph + costs
+SIM --> MODEL
+IO --> MODEL : builds Graph
+IO --> DATA : reads / writes
+MODEL --> COREDS
+ALGO --> COREDS : heaps, queues,\nunion-find
+CORE <-- TESTS : links
+CORE <-- BENCH : links
+GUI <-- GCHK : drives real screens
+
+@enduml

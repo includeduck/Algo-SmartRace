@@ -137,6 +137,12 @@ def markdown(text, title=False):
                 pos += 1
             output.extend([table(cells), Spacer(1, 10)])
             continue
+        picture = re.match(r"^!\[(.+)\]\((.+)\)$", line)
+        if picture:
+            # Markdown image, path relative to report/; drawn full width, up to most of a page.
+            output.append(figure(ROOT / "report" / picture.group(2), picture.group(1), max_height=560))
+            pos += 1
+            continue
         heading = re.match(r"^(#{1,6})\s+(.+)$", line)
         if heading:
             level = len(heading.group(1))
@@ -160,10 +166,10 @@ def markdown(text, title=False):
         output.append(Paragraph(inline(" ".join(paragraph)), styles["Body"]))
     return output
 
-def figure(path, caption):
+def figure(path, caption, max_height=294):
     with PillowImage.open(path) as image:
         width, height = image.size
-    ratio = min(WIDTH / width, 294 / height)
+    ratio = min(WIDTH / width, max_height / height)
     return KeepTogether([Image(str(path), width=width*ratio, height=height*ratio),
                          Paragraph(inline(caption), styles["Caption"])])
 

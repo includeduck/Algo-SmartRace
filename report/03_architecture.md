@@ -20,6 +20,8 @@ The GUI, CLI, tests and benchmarks link smartrace_core. Lab runs attach a trace
 recorder to those same algorithm functions. TraceCursor reconstructs a selected
 operation for visualization, including backward seeking.
 
+![Figure 3.1 - System architecture. Arrows follow the real `#include` and link dependencies; the GUI and CLI reach the backend only through the one public API header. Source: `report/diagrams/architecture.puml` (PlantUML).](diagrams/architecture.png)
+
 ## 3.2 Screen responsibilities
 
 | Required mode | Implemented behavior | Main API calls |
