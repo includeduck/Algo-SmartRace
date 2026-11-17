@@ -3,6 +3,7 @@
 #include "../model/Graph.h"
 #include "../model/Records.h"
 #include "../model/CostModel.h"
+#include "../model/Rules.h"
 #include "../io/TrackLoader.h"
 #include "EventQueue.h"
 #include "EffectManager.h"
@@ -14,11 +15,18 @@ namespace sim
 {
     struct RaceConfig
     {
+        RaceConfig()
+            : laps(Rules::kDefaultLaps), opponentCount(3), humanPreset(model::Preset::Balanced),
+              eventSeed(0), humanAutopilot(true), startNitroCharges(Rules::kDefaultStartNitroCharges)
+        {
+        }
+
         int laps;
         int opponentCount;          // not counting the human; 3-9 per the brief's minimum/table cap
         model::Preset humanPreset;
         unsigned long long eventSeed;
         bool humanAutopilot;
+        int startNitroCharges;      // every racer's initial allocation (brief 4.2 rule 1), 0..kMaxNitroCharges
     };
 
     // RaceEngine: the deterministic race simulation (Project.pdf sections

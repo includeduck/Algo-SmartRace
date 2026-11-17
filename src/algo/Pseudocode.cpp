@@ -119,7 +119,7 @@ namespace algo
         {
             "QuickSort(A, lo, hi):",
             "  while lo < hi:",
-            "    move the median of A[lo], A[mid], A[hi] to A[lo]; pivot = A[lo]",    // kMedian
+            "    sample 3 positions (seeded); move their median to A[lo]; pivot = A[lo]",   // kMedian
             "    lt = lo, i = lo + 1, gt = hi   (three-way partition)",
             "    while i <= gt: compare A[i] with the pivot",                      // kCompare
             "      smaller: swap A[lt], A[i] | larger: swap A[i], A[gt] | equal: i++",   // kSwap

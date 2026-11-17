@@ -3,6 +3,7 @@
 #include "AlgoStats.h"
 #include "Trace.h"
 #include "Pseudocode.h"
+#include "../core/util/Rng.h"
 
 // The three ranking sorts of Act 5 (Project.pdf section 5.5), hand-written,
 // all driven by the SAME comparator policy so every method produces the
@@ -103,27 +104,49 @@ namespace algo
 
         // ---- Quick Sort ------------------------------------------------
 
-        // Moves the median of data[lo], data[mid], data[hi] to data[lo] so
-        // it can serve as the pivot. Median-of-three avoids the O(n^2)
-        // worst case on already-sorted and reverse-sorted input.
+        // Moves the median of three SAMPLED elements to data[lo] so it can
+        // serve as the pivot. The sample positions come from a seeded
+        // generator (fixed seed per QuickSort call), so the sort stays fully
+        // deterministic -- same input, same steps, same Lab trace -- while
+        // no natural input order can line up with them.
+        //
+        // Why not the classic fixed lo/mid/hi positions: the three-way
+        // partition below swaps every "greater" element to the end, which
+        // reverses that block, and the sub-arrays it then recurses into
+        // take on patterns that defeat a fixed-position median. Experiment
+        // 5 measured it: on sorted input of 100k records fixed positions
+        // cost ~13 n log2 n comparisons (and growing with n) against
+        // ~1.1 n log2 n on random input. With sampled positions the
+        // expected cost is O(n log n) for every input order.
         template <typename T, typename Cmp>
-        void MedianOfThreeToFront(T* data, int lo, int hi, AlgoStats* stats, Trace* trace)
+        void MedianOfThreeToFront(T* data, int lo, int hi, Rng* rng, AlgoStats* stats, Trace* trace)
         {
             const int line = lines::quick::kMedian;
-            int mid = lo + (hi - lo) / 2;
-            if (CompareAt<T, Cmp>(data[mid], data[lo], mid, lo, stats, trace, line) < 0) SwapAt(data, mid, lo, stats, trace, line);
-            if (CompareAt<T, Cmp>(data[hi], data[lo], hi, lo, stats, trace, line) < 0) SwapAt(data, hi, lo, stats, trace, line);
-            if (CompareAt<T, Cmp>(data[hi], data[mid], hi, mid, stats, trace, line) < 0) SwapAt(data, hi, mid, stats, trace, line);
-            // Now data[lo] <= data[mid] <= data[hi]; the median is at mid.
-            SwapAt(data, lo, mid, stats, trace, line);
+            int a = rng->NextInt(lo, hi);
+            int b = rng->NextInt(lo, hi);
+            int c = rng->NextInt(lo, hi);
+
+            // Order the three sampled positions' elements so data[b] is the median.
+            if (CompareAt<T, Cmp>(data[b], data[a], b, a, stats, trace, line) < 0)
+            {
+                int t = a;
+                a = b;
+                b = t;
+            }
+            if (CompareAt<T, Cmp>(data[c], data[b], c, b, stats, trace, line) < 0)
+            {
+                b = c;
+                if (CompareAt<T, Cmp>(data[b], data[a], b, a, stats, trace, line) < 0) b = a;
+            }
+            if (b != lo) SwapAt(data, lo, b, stats, trace, line);
         }
 
         template <typename T, typename Cmp>
-        void QuickSortRange(T* data, int lo, int hi, AlgoStats* stats, Trace* trace)
+        void QuickSortRange(T* data, int lo, int hi, Rng* rng, AlgoStats* stats, Trace* trace)
         {
             while (lo < hi)
             {
-                MedianOfThreeToFront<T, Cmp>(data, lo, hi, stats, trace);
+                MedianOfThreeToFront<T, Cmp>(data, lo, hi, rng, stats, trace);
                 T pivot = data[lo];
 
                 // Three-way (Dutch national flag) partition:
@@ -159,12 +182,12 @@ namespace algo
                 // call stack stays O(log n) even in a bad partition.
                 if (lt - lo < hi - gt)
                 {
-                    QuickSortRange<T, Cmp>(data, lo, lt - 1, stats, trace);
+                    QuickSortRange<T, Cmp>(data, lo, lt - 1, rng, stats, trace);
                     lo = gt + 1;
                 }
                 else
                 {
-                    QuickSortRange<T, Cmp>(data, gt + 1, hi, stats, trace);
+                    QuickSortRange<T, Cmp>(data, gt + 1, hi, rng, stats, trace);
                     hi = lt - 1;
                 }
             }
@@ -204,14 +227,18 @@ namespace algo
         delete[] buffer;
     }
 
-    // Quick sort with a median-of-three pivot and a three-way partition.
-    // O(n log n) average, O(n^2) worst case (made very unlikely, not
-    // impossible, by median-of-three), O(log n) stack, in place, not stable.
+    // Quick sort: pivot = median of three sampled elements (deterministic
+    // seeded sampling, see MedianOfThreeToFront), three-way partition.
+    // O(n log n) expected for every input order, O(n^2) worst case (needs
+    // an input built against the fixed seed), O(log n) stack, in place,
+    // not stable. Duplicates are grouped by the partition and never
+    // recursed into again.
     template <typename T, typename Cmp>
     void QuickSort(T* data, int n, AlgoStats* stats = nullptr, Trace* trace = nullptr)
     {
         if (n < 2) return;
-        detail::QuickSortRange<T, Cmp>(data, 0, n - 1, stats, trace);
+        Rng rng(0x51C0FFEEULL);
+        detail::QuickSortRange<T, Cmp>(data, 0, n - 1, &rng, stats, trace);
     }
 
     // Heap sort: bottom-up heapify in O(n), then n-1 extractions of the

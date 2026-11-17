@@ -69,6 +69,18 @@ namespace sim
         // diagnostic/test use only.
         int PendingCount() const;
 
+        // The heap's own operation counters since construction (sift
+        // comparisons and element swaps) -- Experiment 4's "heap operations".
+        long long HeapComparisons() const
+        {
+            return m_heap.comparisons;
+        }
+
+        long long HeapSwaps() const
+        {
+            return m_heap.swaps;
+        }
+
     private:
         MinHeap<Event*, EventLess> m_heap;
         Pool<Event> m_pool;

@@ -1,0 +1,8 @@
+Machine used for the reported results (recorded by hand; smartrace_bench
+cannot query the CPU without Windows-specific headers):
+cpu: 12th Gen Intel(R) Core(TM) i7-1265U (10 cores / 12 threads, base 1800 MHz, turbo boost on)
+ram: 31.4 GB
+os: Microsoft Windows 11 Pro build 26300
+power plan: Balanced (laptop on mains power)
+compiler: MSVC 19.51 (Visual Studio 2026), x64, Release (/O2), CMake
+benchmark: single-threaded; all experiments in one process, one after another

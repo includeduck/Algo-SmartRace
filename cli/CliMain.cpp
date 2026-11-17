@@ -13,6 +13,25 @@
 
 #include <cstdio>
 
+#if defined(_MSC_VER) && defined(_DEBUG)
+#include <crtdbg.h>
+#endif
+
+namespace
+{
+    // Debug builds: the MSVC CRT debug heap reports every block still
+    // allocated when the process exits (after static destructors), on
+    // stderr, as "Detected memory leaks!". Release builds: no-op.
+    void EnableLeakReport()
+    {
+#if defined(_MSC_VER) && defined(_DEBUG)
+        _CrtSetDbgFlag(_CrtSetDbgFlag(_CRTDBG_REPORT_FLAG) | _CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+        _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_WARN, _CRTDBG_FILE_STDERR);
+#endif
+    }
+}
+
 namespace
 {
     const char* PresetName(Preset p)
@@ -233,6 +252,7 @@ namespace
 
 int main()
 {
+    EnableLeakReport();
     if (ApiInit("data") != ApiStatus::Ok)
     {
         printf("ApiInit failed: %s\n", ApiLastError());

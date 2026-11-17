@@ -43,6 +43,42 @@ The CLI prints the Explorer data for each circuit, plays a full
 championship, runs every Algorithm Lab module, then generates a track,
 saves it to `build/generated_demo.trk`, reloads it and validates it.
 
+## Experiments (`smartrace_bench`)
+
+The five required experimental studies (Project.pdf section 7). Build
+**Release** and run from the repository root (Experiment 2 reads
+`data/circuits`):
+
+```bash
+cmake --build build --config Release
+```
+
+```bash
+build/Release/smartrace_bench.exe all
+```
+
+Options: `exp1` … `exp5` instead of `all`, `--runs N` (default 7 timed runs),
+`--warmup N` (default 2), `--seed S` (default 42), `--out DIR` (default
+`results`), `--quick` (reduced sizes, for a smoke test). Output:
+
+- `results/raw/expN_*_raw.csv` — every timed sample;
+- `results/summary/expN_*_summary.csv` — mean, median, standard deviation,
+  min and max per configuration, plus operation counters;
+- `results/summary/correctness.csv` — the untimed correctness checks (the
+  exit code is the number that failed);
+- `results/summary/environment.txt` — compiler, build mode, runs and seed.
+
+Charts and markdown tables for the report: `python tools/plot_results.py`
+(needs Python 3 + matplotlib, a report-only tool) writes `results/charts/`
+and `results/RESULTS.md`. Each experiment's inputs, timing rules and checks
+are documented at the top of its `bench/Exp*.cpp` file.
+
+## Memory-leak check
+
+Debug builds of `smartrace_tests` and `smartrace_cli` enable the MSVC CRT
+debug heap's leak report: any block still allocated at exit is printed to
+stderr as `Detected memory leaks!`. A clean run prints nothing.
+
 ## API status (for the GUI)
 
 `SmartRaceApi.h` is **v1.0 and frozen** (`SMARTRACE_API_VERSION 10`): from
@@ -67,7 +103,7 @@ src/api/     SmartRaceApi.h/.cpp — the one interface the GUI uses
 src/app/     the GUI (Rayyan's)
 cli/         headless driver / API usage sample
 tests/       unit + integration tests (TEST()/CHECK() framework)
-bench/       the 5 required experiments (added in a later phase)
+bench/       smartrace_bench: the 5 required experiments
 data/        rules.cfg and the .trk circuit files
 tools/       gen_circuits.py -- authoring aid that generates and validates
              data/circuits/*.trk (Python; not part of the game or its build)

@@ -3,7 +3,7 @@
 #include "ApiTypes.h"
 
 // ===========================================================================
-// SmartRace backend API — v0.1 (Phase 0 / P0)
+// SmartRace backend API — v1.0 (frozen; see CHANGELOG below)
 //
 // This is the ONLY header the GUI includes from the backend, together with
 // ApiTypes.h which it pulls in. The GUI must not reach into src/core,
@@ -52,6 +52,11 @@
 //     (ApiLabRun(TrackGenerator) + ApiLabGeneratorReport +
 //     ApiLabSaveGenerated) and ApiLoadCircuitFile. From here on the API
 //     only changes for bug fixes.
+//   v1.0.1 (Phase 5, bug fixes, no signature changes): ApiSetSettings now
+//     rejects out-of-range values with InvalidArgument (laps 2..3,
+//     opponentCount 3..9, startNitroCharges 0..3) instead of storing them;
+//     Settings.startNitroCharges now really sets every racer's starting
+//     nitro (it was ignored before).
 // ===========================================================================
 
 #define SMARTRACE_API_VERSION 10
@@ -83,6 +88,10 @@ ApiStatus ApiLoadCircuit(int index);
 // ApiLoadCircuit.
 ApiStatus ApiLoadCircuitFile(const char* path);
 
+// Settings apply from the next ApiRaceStart / ApiChampionshipStart.
+// ApiSetSettings rejects out-of-range values (InvalidArgument) and keeps
+// the previous settings: laps 2..3, opponentCount 3..9,
+// startNitroCharges 0..3.
 Settings ApiGetSettings();
 ApiStatus ApiSetSettings(const Settings& settings);
 

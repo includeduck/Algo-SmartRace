@@ -1,0 +1,7 @@
+compiler: MSVC 195136248
+build: Release (optimised)
+pointer size: 64 bits
+runs per configuration: 7 (after 2 warm-up runs)
+input seed: 42
+quick mode: no
+timer: QueryPerformanceCounter, microseconds

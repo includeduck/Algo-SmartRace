@@ -23,6 +23,5 @@ cmake_install.cmake
 *.vcxproj.user
 Makefile
 
-# Experiment output (generated, not hand-authored)
-results/raw/
-results/summary/
+# Experiment output under results/ IS committed: the brief requires the raw
+# measurements and result files in the submission.

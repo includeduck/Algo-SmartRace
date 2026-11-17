@@ -159,7 +159,7 @@ namespace sim
             racer.fuelTenths = Rules::kMaxFuelTenths;
             racer.fuelRemainder = 0.0;
             racer.refuelledAtVertex = -1;
-            racer.nitroCharges = Rules::kDefaultStartNitroCharges;
+            racer.nitroCharges = config.startNitroCharges;
             racer.nitroActive = false;
             racer.nitroTimeLeftMs = 0;
             racer.lap = 1;

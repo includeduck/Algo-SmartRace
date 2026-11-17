@@ -56,7 +56,7 @@ if(SMARTRACE_CLI_SOURCES)
 endif()
 
 # ---------------------------------------------------------------------------
-# smartrace_bench — the 5 required experiments (bench/ lands in Phase P5)
+# smartrace_bench — the 5 required experiments (Project.pdf section 7)
 # ---------------------------------------------------------------------------
 if(EXISTS "${CMAKE_SOURCE_DIR}/bench")
     file(GLOB_RECURSE SMARTRACE_BENCH_SOURCES CONFIGURE_DEPENDS

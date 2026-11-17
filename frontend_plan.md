@@ -108,7 +108,7 @@ All tests must pass. Run commands from the repository root, because they read `d
 
 ### 1.3 CMake target
 
-Append this block to the **end** of the root `CMakeLists.txt`. Don't change the backend targets above it.
+The root `CMakeLists.txt` ends with a placeholder `smartrace` block (the one starting `if(EXISTS "${CMAKE_SOURCE_DIR}/src/app")`). **Replace that whole placeholder block** with the block below; don't change the backend targets above it. Two `smartrace` targets would fail to configure.
 
 ```cmake
 # ---------------------------------------------------------------------------
@@ -479,13 +479,13 @@ On `Enter`: `Settings s = ApiGetSettings();` and keep it in a member. Controls:
 | Field | Control | Range |
 |---|---|---|
 | `laps` | `GuiToggleGroup` "2;3" | 2..3 |
-| `opponentCount` | `GuiSpinner` | **3..9** (the API doesn't clamp, so the GUI must) |
+| `opponentCount` | `GuiSpinner` | **3..9** (keep the spinner in range; `ApiSetSettings` rejects anything else with `InvalidArgument`) |
 | `defaultPreset` | `GuiToggleGroup` "Balanced;Speed;Economy;Safety" | enum order = `Preset` order |
 | `eventSeed` | `GuiValueBox` (int) | ≥ 0 |
 | `showCostLabels` | `GuiCheckBox` | |
-| `startNitroCharges` | **Don't show it.** The engine always uses the frozen rule (1). Keep the value unchanged. | |
+| `startNitroCharges` | `GuiSpinner` | 0..3 (default 1; every racer starts with this many charges) |
 
-Buttons: **Save** → `ApiSetSettings(s)`, toast "Settings saved", `Go(MainMenu)`. **Cancel** → `Go(MainMenu)`.
+Buttons: **Save** → `ApiSetSettings(s)`; if it returns `InvalidArgument`, toast `ApiLastError()` and stay; otherwise toast "Settings saved" and `Go(MainMenu)`. **Cancel** → `Go(MainMenu)`.
 
 Settings take effect at the **next** `ApiRaceStart` / `ApiChampionshipStart` (opponent count is fixed for a whole championship). Say so in a small note on the screen.
 

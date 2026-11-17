@@ -490,6 +490,21 @@ Settings ApiGetSettings()
 
 ApiStatus ApiSetSettings(const Settings& settings)
 {
+    if (settings.laps < Rules::kMinLaps || settings.laps > Rules::kMaxLaps)
+    {
+        SetError("laps must be 2 or 3");
+        return ApiStatus::InvalidArgument;
+    }
+    if (settings.opponentCount < 3 || settings.opponentCount > 9)
+    {
+        SetError("opponentCount must be 3..9");
+        return ApiStatus::InvalidArgument;
+    }
+    if (settings.startNitroCharges < 0 || settings.startNitroCharges > Rules::kMaxNitroCharges)
+    {
+        SetError("startNitroCharges must be 0..3");
+        return ApiStatus::InvalidArgument;
+    }
     g_settings = settings;
     return ApiStatus::Ok;
 }
@@ -570,6 +585,7 @@ ApiStatus ApiRaceStart()
     config.humanPreset = ToModelPreset(g_settings.defaultPreset);
     config.eventSeed = g_settings.eventSeed;
     config.humanAutopilot = true;   // ApiCmdAutopilot(false) switches to manual
+    config.startNitroCharges = g_settings.startNitroCharges;
 
     g_engine->Start(g_graph, g_trackData, config);
     RebuildViews();   // the engine's EffectManager may have already touched edge state

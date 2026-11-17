@@ -1,0 +1,4 @@
+case,items,budget,dp_benefit,dp_cost,dp_items,greedy_benefit,greedy_cost,greedy_items,exhaustive_benefit,greedy_strictly_worse
+brief_ABC,"A(6;30) B(5;24) C(5;24)",10,48,10,B C,30,6,A,48,yes
+G1_team,"costs 4;3;3 benefits 9;6;6",6,12,6,1 2,9,4,0,12,yes
+G2_team,"costs 5;4;4;2 benefits 11;8;8;1",8,16,8,1 2,12,7,0 3,16,yes
