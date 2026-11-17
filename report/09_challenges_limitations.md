@@ -1,6 +1,6 @@
 # 9. Advanced Challenges, Limitations and Future Work
 
-*Backend section — Muhammad Wasay Tariq (24I-3071). Rayyan adds the GUI's limitations.*
+*Backend section — Muhammad Wasay Tariq (24I-3071). Syed Muhammad Rayyan Hassan (24I-3000) adds the GUI's limitations.*
 
 ## 9.1 Advanced challenges completed
 

@@ -1,6 +1,6 @@
 # 7. Testing Strategy, Test Cases and Results
 
-*Backend section — Muhammad Wasay Tariq (24I-3071). GUI testing is in Rayyan's section.*
+*Backend section — Muhammad Wasay Tariq (24I-3071). GUI testing is in Syed Muhammad Rayyan Hassan's (24I-3000) section.*
 
 ## 7.1 Strategy
 

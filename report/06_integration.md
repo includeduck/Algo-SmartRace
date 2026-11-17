@@ -1,6 +1,6 @@
 # 6. Integration: Where Each Algorithm Runs in the Game
 
-*Backend section — Muhammad Wasay Tariq (24I-3071). The "Screen" column refers to Rayyan's GUI chapter.*
+*Backend section — Muhammad Wasay Tariq (24I-3071). The "Screen" column refers to Syed Muhammad Rayyan Hassan's GUI chapter (24I-3000).*
 
 The brief's design principle is that every mandatory algorithm has a functional role in the game, and that the Algorithm Lab calls the **same implementation** the game uses. Both properties come from the architecture:
 

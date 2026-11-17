@@ -1,6 +1,6 @@
 # Handoff to Rayyan — 17 Nov 2026
 
-From Wasay (24I-3071) to Rayyan (24I-3000). Deadline: **Sat 5 Dec 2026, 11:59 PM**.
+From Muhammad Wasay Tariq (24I-3071) to Syed Muhammad Rayyan Hassan (24I-3000). Section **BSE-5B** (Software Engineering). Deadline: **Sat 5 Dec 2026, 11:59 PM**.
 
 The backend is finished: all phases, the experiments and the backend report chapters. What's left before submission is mostly on the GUI side, plus a few joint steps. This page lists exactly what changed since your GUI commits, what to wire up, and what we still have to do together.
 
@@ -108,7 +108,7 @@ Everything is in `report/`. Read `report/README.md` first; it explains the file 
 
 | File | Status |
 |---|---|
-| `01_title.md` (title page: project, course, section, both names and roll numbers) | **you** |
+| `01_title.md` (title page: Smart Racing Championship; Design and Analysis of Algorithms; section BSE-5B; Muhammad Wasay Tariq 24I-3071 and Syed Muhammad Rayyan Hassan 24I-3000) | **you** |
 | `02_introduction.md` (introduction and problem statement) | **you** |
 | `03_architecture.md` (architecture and game flow: screens, navigation, the one-header API boundary; I can add a backend diagram) | **you** |
 | `04`–`09` | done by me. Please read `06_integration.md` and check the "Screen" column matches your GUI. |
@@ -121,10 +121,10 @@ The brief requires the final report as **one PDF**.
 ## 7. Packaging (joint, Fri 4 Dec)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Section <our section> -Verify
+powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Verify      # section defaults to BSE-5B
 ```
 
-This builds Release (including `smartrace.exe`), runs the tests, and writes `build\package\24I-3071_24I-3000_<Section>.zip` with sources, `third_party/`, data, results, report and a `bin\` folder of ready-to-run executables. `-Verify` then extracts the ZIP into an empty folder, rebuilds and re-tests there. It warns if the GUI exe or the report PDF is missing. We need to fill in our actual section.
+This builds Release (including `smartrace.exe`), runs the tests, and writes `build\package\24I-3071_24I-3000_BSE-5B.zip` (the brief's required name) with sources, `third_party/`, data, results, report and a `bin\` folder of ready-to-run executables. `-Verify` then extracts the ZIP into an empty folder, rebuilds and re-tests there. It warns if the GUI exe or the report PDF is missing.
 
 ## 8. Dates
 

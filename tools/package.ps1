@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-    Builds the submission ZIP: 24I-3071_24I-3000_<Section>.zip
+    Builds the submission ZIP: 24I-3071_24I-3000_BSE-5B.zip
+    (Muhammad Wasay Tariq 24I-3071, Syed Muhammad Rayyan Hassan 24I-3000; section BSE-5B)
 
 .DESCRIPTION
     1. Configures and builds the Release configuration (all targets, including
@@ -8,16 +9,16 @@
     2. Runs smartrace_tests; stops if any test fails.
     3. Stages a clean copy of the sources, data, results and report, plus a
        bin/ folder with the Release executables and data/ next to them.
-    4. Zips it as build/package/24I-3071_24I-3000_<Section>.zip.
+    4. Zips it as build/package/24I-3071_24I-3000_<Section>.zip (default section BSE-5B).
     5. With -Verify: extracts the ZIP into an empty temporary folder,
        configures, builds and runs the tests there (the brief: check the ZIP
        for missing files and corruption before submitting).
 
     Run from the repository root in PowerShell:
-        powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Section BCS-5A -Verify
+        powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Verify
 
 .PARAMETER Section
-    Your section, e.g. BCS-5A. Required.
+    The group's section. Defaults to BSE-5B (Software Engineering).
 
 .PARAMETER Verify
     Also rebuild and test from the extracted ZIP in a clean folder.
@@ -26,7 +27,7 @@
     Package whatever is already in build/Release (no build, no tests).
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Section,
+    [string]$Section = 'BSE-5B',
     [switch]$Verify,
     [switch]$SkipBuild
 )

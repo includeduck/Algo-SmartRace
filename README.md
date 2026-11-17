@@ -51,7 +51,7 @@ shapes and the library's bundled font; no external art assets were added.
 Design and Analysis of Algorithms project. This repository currently holds
 the **backend** (Muhammad Wasay Tariq, 24I-3071): the data model, all 12
 mandatory algorithms, the deterministic race engine, the championship, the
-experiments and the tests. The GUI (Rayyan, 24I-3000) is a separate target
+experiments and the tests. The GUI (Syed Muhammad Rayyan Hassan, 24I-3000) is a separate target
 that links this backend through one header — see
 [`src/api/SmartRaceApi.h`](src/api/SmartRaceApi.h).
 
@@ -132,12 +132,12 @@ stderr as `Detected memory leaks!`. A clean run prints nothing.
 - `report/` holds the technical report's chapters as Markdown (see
   `report/README.md` for who writes what and how to make the PDF).
 - `tools/package.ps1` builds Release, runs the tests, and writes
-  `build/package/24I-3071_24I-3000_<Section>.zip` (sources, data, results,
+  `build/package/24I-3071_24I-3000_BSE-5B.zip` (sources, data, results,
   report, and `bin/` with the Release executables). `-Verify` then rebuilds
   and re-tests from the extracted ZIP in an empty folder:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Section BCS-5A -Verify
+powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Verify
 ```
 
 ## API status (for the GUI)

@@ -1,5 +1,8 @@
 # Technical report — sources
 
+**Smart Racing Championship** — Design and Analysis of Algorithms, section **BSE-5B** (Software Engineering).
+Group: **Muhammad Wasay Tariq (24I-3071)** — backend; **Syed Muhammad Rayyan Hassan (24I-3000)** — GUI.
+
 The brief (section 9.2) asks for one PDF with ten parts. This folder holds them as Markdown, one file per chapter, so both of us can edit our own parts and merge them at the end.
 
 | # | Part (brief 9.2) | File | Author |
@@ -22,4 +25,4 @@ The brief (section 9.2) asks for one PDF with ten parts. This folder holds them 
 - Python 3 with matplotlib — used only to draw the report's charts from the benchmark CSVs (`tools/plot_results.py`) and to author the hand-made circuit files (`tools/gen_circuits.py`). Neither is part of the game or its build.
 - No other third-party code. Every algorithm and data structure in the game is our own.
 
-**Making the PDF.** Any of these works: open the Markdown files in VS Code with a "Markdown PDF" extension; paste them into Word or Google Docs and export to PDF; or install pandoc and run `pandoc 01_title.md … 10_conclusion.md -o report.pdf`. Save the result as `report/24I-3071_24I-3000_<Section>_Report.pdf`. `tools/package.ps1` warns if `report/` has no PDF.
+**Making the PDF.** Any of these works: open the Markdown files in VS Code with a "Markdown PDF" extension; paste them into Word or Google Docs and export to PDF; or install pandoc and run `pandoc 01_title.md … 10_conclusion.md -o report.pdf`. Save the result as `report/24I-3071_24I-3000_BSE-5B_Report.pdf`. `tools/package.ps1` warns if `report/` has no PDF.
