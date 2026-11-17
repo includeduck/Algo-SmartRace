@@ -26,3 +26,10 @@ The brief (section 9.2) asks for one PDF with ten parts. This folder holds them 
 - No other third-party code. Every algorithm and data structure in the game is our own.
 
 **Making the PDF.** Any of these works: open the Markdown files in VS Code with a "Markdown PDF" extension; paste them into Word or Google Docs and export to PDF; or install pandoc and run `pandoc 01_title.md … 10_conclusion.md -o report.pdf`. Save the result as `report/24I-3071_24I-3000_BSE-5B_Report.pdf`. `tools/package.ps1` warns if `report/` has no PDF.
+
+
+## Combined review edition — 17 November 2026
+
+All ten chapter sources are now present. Rayyan completed 01–03, appended GUI testing to 07 and limitations to 09, checked the screen mappings in 06, and added the joint conclusion/acknowledgements in 10. The partner's backend chapters and measured results were preserved.
+
+Run `python report/build_report.py` from the repository root to regenerate `report/24I-3071_24I-3000_BSE-5B_Report.pdf`. The exporter needs Python 3, ReportLab, Pillow and Windows Arial fonts. It assembles the actual screenshots in `report/screenshots/` and all ten existing benchmark charts. The game has no Python dependency. Manual acceptance remains explicitly distinguished from automated evidence in Chapter 7 and docs/gui-verification.md.

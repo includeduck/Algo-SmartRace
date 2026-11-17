@@ -91,3 +91,10 @@ autopilot routes with A* (same optimal cost as Dijkstra), and scripted events
 aimed at the wrong kind of element are rejected and logged. The pre-race
 baseline for pickups now uses `Settings.startNitroCharges` instead of the
 fixed default.
+
+
+## GUI response: v1.1 integrated (Rayyan, 17 Nov 2026)
+
+All H1–H8 requests above are now resolved in the GUI or supplied partner deliverables. Ordered race alternatives can be selected before/during a race; selected-endpoint searches expose metrics; maps use exact optimized road costs and candidate road IDs; Settings exposes starting nitro; live Lab resources and structured source badges are wired. The event seed is labelled reserved. No further backend API change is requested.
+
+Current verification supersedes the earlier process-blocked audit: Debug/Release backend tests 129/129 (28,480 checks), GUI contracts 238/238 in each, Release application rendering smoke 72/72. The real screen loop completes a championship, tests the 40-second Harbor round trip and captures all modes and Lab view types. Manual input acceptance remains pending; see gui-verification.md and gui-partner-review.md.

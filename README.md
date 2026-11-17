@@ -35,11 +35,24 @@ playback/seek, pseudocode and counters inspect it. Table row/column controls
 expose large DP tables. Generator Save writes `generated_track.trk` in the
 working directory; loading it is locked during a live race/championship.
 
-GUI contract checks build as `smartrace_gui_checks.exe`; run from the repository
-root. See [verification](docs/gui-verification.md) for the pending manual matrix
-and [backend handoff](docs/gui-backend-handoff.md) for exact remaining contracts.
-Debug/Release compilation does not establish interactive correctness. Windows
-Application Control may require running from an allowed local developer session.
+API v1.1 is integrated: Routes supports selected endpoints and ordered race
+alternatives. Select an ordered candidate and apply its real preset; exploration
+alternatives remain informational. Live Race offers the planner without resetting
+time. Maps use exact backend scalar costs and road IDs. Settings exposes starting
+nitro (0–3); the event seed is reserved because events use authored scripts.
+The Lab offers live/baseline resources and reports the actual structured input source.
+
+Run `build/Release/smartrace_gui_checks.exe` from the repository root for 238
+contract checks. `build/Release/smartrace_gui_smoke.exe` exercises the real
+application loop (72 checks) and refreshes actual captures in `report/screenshots/`.
+It opens its own render window; it does not drive the desktop or replace manual
+keyboard/mouse acceptance. Debug and Release backend suites also pass 129 tests
+(28,480 checks). See [verification](docs/gui-verification.md), the completed
+[partner review](docs/gui-partner-review.md) and [next-session prompt](docs/gui-next-implementation-prompt.md).
+
+The ten-chapter combined [report](report/24I-3071_24I-3000_BSE-5B_Report.pdf) includes
+the real GUI captures and existing experiment charts. Regenerate it with
+`python report/build_report.py` (ReportLab, Pillow and Windows Arial fonts required).
 
 Acknowledgements: [raylib](https://github.com/raysan5/raylib) and
 [raygui](https://github.com/raysan5/raygui), by Ramon Santamaria and contributors,

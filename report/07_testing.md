@@ -74,3 +74,28 @@ Testing paid off. These defects were found by tests or experiments during develo
 - **Shortcut legality:** an early version of Opponent 2 could take a shortcut that bypassed a mandatory checkpoint. Shortcuts are now accepted only if they skip plain intersections.
 - **Settings:** `startNitroCharges` was ignored and out-of-range settings were accepted. Both fixed in API v1.0.1.
 - **Event targets:** a station-outage event aimed at a non-station vertex used to deactivate it. Targets are now checked for the right kind.
+
+
+## 7.5 GUI integration review — 17 November 2026
+
+GUI section by Syed Muhammad Rayyan Hassan (24I-3000). The earlier 124-test table records the partner's Phase 6 measurement baseline; the API v1.1 review now runs 129 tests. The additional API tests and GUI checks do not replace or rewrite those measurements.
+
+| Review check | Configuration | Observed result |
+|---|---|---|
+| Existing backend suite | Debug and Release, MSVC 19.50 x64 | 129/129 tests, 28,480 checks, zero failures in each |
+| GUI contract executable | Debug and Release | 238 checks, zero failures in each |
+| Actual application rendering smoke | Release, Windows 125% display scaling | 72 checks, zero failures |
+| Compile every target including GUI and smoke | Debug and Release | Passed |
+
+The GUI contract checks cover borrowed-path copies, DNF time formatting, bounded deterministic tick accumulation, real circuit validation, same-endpoint and invalid endpoint searches, equal Dijkstra/A* costs, exact candidate road identities, scalar label sums, structured Lab input-source badges, live resource queries and seeking without advancing race time. Championship checks cover all racers, three circuits, comparator agreement, top-k prefixes and duplicate recording.
+
+The rendering smoke test creates the actual App and queues the same actions consumed by screen Update methods. It advances Harbor beyond the 40-second closure, opens the live Explorer, applies a real preset candidate, visits every Lab module, returns with the same paused race clock, then completes a three-race championship. Seed 2 visibly rejects attempt 0 and accepts attempt 1. Real framebuffer captures include all five modes, results, generator and the graph, table, array and event renderers. A separate capture preserves a genuinely infeasible live resource result rather than replacing it with fabricated values.
+
+Screenshot inspection exposed a Windows DPI resize mismatch in raylib 5.5's logical viewport and scissor dimensions. The GUI now derives its canvas from the actual native window client size and uses matching projection, clipping and mouse scaling. The smoke checks framebuffer coverage; 1600 by 900 and 800 by 600 layouts were inspected. Controls outside a scroll panel's visible area no longer leave disabled fragments or accept focus.
+
+These are automated application checks, not physical mouse/keyboard tests. Manual driving, focus order, text entry, intermediate playback/drag seeking, large refuelling-table scrolling, other display scales and the generated-track save/explore interaction remain in docs/gui-verification.md. No manual usability pass is claimed. Backend Debug tests emitted no CRT leak report; the GUI has not had a full interactive leak audit.
+
+
+## 7.6 Submission archive verification
+
+The unchanged partner packaging script was run with -Verify from a short clean Windows extraction path. It built every Release target, passed 129 tests (28,480 checks), staged the sources/dependencies/data/results/report and binaries, created the ZIP, then extracted that archive into a fresh folder and rebuilt/passed the same tests. The first attempt in the deeply nested working path failed compiler discovery; shortening the extraction path resolved it. The host also required CMake on PATH, PATHEXT and the documented MSBuild file-tracker properties. The packaged executable has data/ next to it. Archive integrity is checked again after report regeneration; manual gameplay acceptance remains separate.

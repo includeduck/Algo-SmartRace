@@ -1,0 +1,4 @@
+
+# Preserve generated report bytes and cross-reference offsets on Windows.
+*.pdf binary
+*.png binary

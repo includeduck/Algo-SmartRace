@@ -1,93 +1,51 @@
-# GUI verification
+# GUI verification — 17 November 2026
 
-Baseline: main b5d9c18788744f6723992cf7c3be4b515818ab63, 17 November 2026.
+Integration baseline: main 16c0304a83a85da54ae74c48fb29764093dfdcd2, API v1.1. The earlier publication audit could only compile due to process restrictions. This review supersedes that runtime limitation: native builds, checks and the application's renderer now executed successfully in build/partner-review. The original root checkout remains preserved.
 
-## Build and execution evidence
+## Executed results
 
-- VS18 CMake configure: succeeded.
-- Debug: full project build succeeded, including smartrace, smartrace_gui_checks,
-  existing CLI and existing backend tests.
-- Release: full project build succeeded, including GUI, GUI contract checks,
-  CLI and backend tests.
-- GUI launch: blocked by Windows Application Control.
-- GUI contract-check execution: blocked by Windows Application Control, shell exit 1.
-- Existing backend tests/CLI were blocked during the preceding audit. No runtime
-  pass is assumed from that audit.
-- git diff --check is part of the final static check.
-- Final static checks passed: git diff --check, commit-helper PowerShell syntax,
-  and inspection for forbidden backend includes/STL in GUI sources. These checks
-  do not establish runtime behavior.
-- No authored circuit regeneration, backend source modification or dependency
-  upgrade beyond the pinned GUI plan was performed.
+| Check | Debug | Release |
+|---|---|---|
+| Full x64 MSVC build (19.50; Windows SDK 10.0.26100) | Passed | Passed |
+| Existing backend tests | 129/129; 28,480 checks; 0 failures | 129/129; 28,480 checks; 0 failures |
+| GUI contract checks | 238; 0 failures | 238; 0 failures |
+| Application rendering smoke | Built | 72; 0 failures |
 
-## Commands
+Backend Debug tests emitted no CRT leak report. This is not a full interactive GUI memory-leak audit. The partner's five experiment datasets/charts were preserved; this GUI review does not claim a fresh full benchmark run.
 
-Run from the repository root with Visual Studio's CMake on PATH:
+The rendering smoke test instantiates the actual App, queues the same screen actions used by controls, runs real backend simulation and captures its actual OpenGL framebuffer. It does not automate the desktop or test physical keyboard/mouse dispatch. Screenshots under report/screenshots include the five modes, race results, graph/table/array/event Lab views, generator, a genuine infeasible live resource result and 800×600 layouts. Windows display scaling was 125%. The screenshot review found and fixed a resize viewport/scissor mismatch and clipped-control fragments; the smoke also checks framebuffer coverage.
+
+The smoke verifies all 13 Lab modules and initial/final seeking, the 40-second Harbor event followed by live Explorer and Lab round trips, preserved paused time, a three-race championship and duplicate-Continue rejection, and seed 2's rejected first / accepted second generator attempt.
+
+## Reproduce
+
+Run from repository root; the smoke writes/refreshes report/screenshots/*.png:
 
 ~~~powershell
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64
-cmake --build build --config Debug
-cmake --build build --config Release
-.\build\Debug\smartrace_gui_checks.exe
+cmake --build build --config Debug -- /m:1 /nr:false /p:TrackFileAccess=false /p:PreferredToolArchitecture=x64
+cmake --build build --config Release -- /m:1 /nr:false /p:TrackFileAccess=false /p:PreferredToolArchitecture=x64
 .\build\Debug\smartrace_tests.exe
-.\build\Debug\smartrace_cli.exe
-Push-Location build/Release
-.\smartrace.exe
-Pop-Location
+.\build\Release\smartrace_tests.exe
+.\build\Debug\smartrace_gui_checks.exe
+.\build\Release\smartrace_gui_checks.exe
+.\build\Release\smartrace_gui_smoke.exe
+python report/build_report.py
 ~~~
 
-If cmake is not on PATH, use
-C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe.
+The explicit MSBuild properties avoid a file-tracker hang in this automation host. A normal local CMake build can omit them. Native game launch is build/Release/smartrace.exe, with data/ beside the executable; CMake copies it. The report exporter additionally needs Python, ReportLab, Pillow and the Windows Arial fonts. These are report tools, not game dependencies.
 
-The existing tests and CLI can write generated tracks under ignored build/.
-The GUI only writes generated_track.trk when Save is requested in the Lab.
+## Acceptance status
 
-## Manual matrix (pending; do not mark as passed without running)
-
-| Area | Action | Expected result |
+| Area | Automated evidence | Still manual |
 |---|---|---|
-| Launch | Run beside copied data/, then try missing data | Three circuits load; missing files show a persistent error and retry control |
-| Layout | Resize to 1600x900, 1280x720 and 800x600 | Required controls remain reachable; scroll panels do not activate clipped controls |
-| Keyboard | Tab/Shift-Tab, Enter, numeric Left/Right, PgUp/PgDn | Visible focus and accessible controls |
-| Explorer | All circuits; BFS source=target and reachability-only target -1 | Minimum-road labels and real reachable checkpoints |
-| DFS | Inspect cycle witness/components/dead ends | Weak components labelled correctly; witness highlights |
-| Routes | Four presets, Dijkstra/A*; compare alternatives | Exact backend scalar; equal costs; unrestricted candidates clearly labelled |
-| Resources | Zero and positive budgets; infeasible plan | Distinct fuel/nitro/time units; real choices and error states |
-| Race | Quick race; pause/resume, 1 tick, playback speed | Pause freezes time; one tick adds 20 ms |
-| Manual | Choose roads; skip/buy fuel; use nitro; wait for reopening | Backend validates commands; invalid choices give errors |
-| Session | Race -> Lab -> Back and Race -> Paddock -> Continue | No race restart, lost log, changed autopilot, pause or speed |
-| Events | Observe real scripted closures/restrictions and expirations | Road state and logs reflect current graph; clock never restarts |
-| Results | Finish/DNF/time-limit records and missing lap | Sentinel times display dashes; every racer appears |
-| Championship | Complete circuits 1, 2, 3; attempt repeated Continue | Exactly one record per race and a final champion |
-| Rankings | Merge/Quick/Heap and k=1..n | Agreement badge and top-k prefix match backend |
-| Lab | All 13 modules, initial/next/back/seek/final/play | Real frames, counters and pseudocode; backward seek restores state |
-| Lab resources | Brief example and circuit mode with no items | Backend result identifies actual example; no fake circuit claim |
-| Lab tables | Scroll refuelling table to column 1000 | Viewport rendering, readable indices and unreachable-state labels |
-| Generator | Seed 2, rejection/acceptance, save/explore | Actual attempts shown; no asserted rejection count; load locked during session |
+| Data loading | Three real circuits validated; missing-data API recovery contract | Click retry in missing-data screen |
+| Routes | Preset cost equality, endpoint edge cases, exact scalar sums, candidate road IDs; real screen selection action | Click/Shift-click endpoints and inspect all candidates |
+| Race | Time step contract, live planner/Lab freeze and pause retention, three completed races | Road choices, wait/reopening, station purchases, nitro using physical controls |
+| Resources | Structured example/live metadata; real DP table and infeasible live trace | Scroll wide refuelling tables and inspect all budgets |
+| Championship | Exactly once progression, final champion, sort/top-k agreement | Review every sort control visually |
+| Lab | All modules expose real frames; initial/final seek; seed-2 rejection/acceptance | All intermediate playback speeds, drag seeking and save/explore click flow |
+| Layout | 1600×900 and 800×600 framebuffer captures inspected at 125% scale | Other scales, monitors and 1280×720 |
+| Accessibility | Visible-control clipping and focus implementation reviewed | Tab/Shift-Tab, text entry, focus order and usability |
 
-## Original checkout commit limitation
-
-The working checkout's .git directory is read-only in this session. git add and
-git commit failed creating .git/index.lock. No commit was created. An isolated
-clone attempt also failed under host process restrictions. No permission bypass
-was attempted.
-
-tools/commit-gui.ps1 prepares three named commits from only the GUI-owned paths
-when run in a normal local terminal. It refuses to include pre-staged changes and
-does not stage the existing codex-plans files or push to a remote.
-
-## Publication checkout
-
-A separate existing checkout at Algo-SmartRace/ is based on the newer backend
-Phase 5 commit 4fbf42dd498ed31fc4bab2c2a25b98b95733dc16 and permits Git writes.
-GUI changes were copied there, merging only the GUI CMake block, adding the
-vendored-library ignore exception, and preserving the latest backend README.
-The original parent checkout and its planning files were preserved. The three
-GUI commits are created in this publication checkout. The original read-only
-Git limitation above does not describe this newer checkout.
-
-The merged publication checkout configured successfully and built smartrace and
-smartrace_gui_checks in Debug and Release against Phase 5. Runtime checks remain
-unverified due to the earlier Windows Application Control block. A normal Git
-push dry run authenticated successfully; the connected GitHub API integration
-itself returned 403 for write access. The original checkout was not reset.
+Do not mark this remaining column passed without performing those interactions. No known open backend dependency remains. The final submission archive's extraction/rebuild evidence is recorded in gui-partner-review.md after packaging.

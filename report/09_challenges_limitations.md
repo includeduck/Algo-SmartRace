@@ -52,3 +52,16 @@ Routes are compared under the Balanced, Speed, Economy and Safety presets (secti
 4. **Seeded random event streams**, using the reserved event seed, while keeping races reproducible.
 5. **Generator variety:** other vertex layouts (radial, clustered), one-way roads with directed validation, and difficulty-aware placement.
 6. **Prim's MST** as a second backbone algorithm for comparison with Kruskal (the brief requires only one).
+
+
+## 9.4 GUI limitations and acceptance boundary
+
+GUI section by Syed Muhammad Rayyan Hassan (24I-3000).
+
+- The native frontend targets Windows x64 and the vendored raylib 5.5 MSVC library. Its small WindowCanvas adapter uses the Windows client rectangle to keep drawing, clipping and pointer coordinates consistent when resizing at non-100% DPI. It is not currently a portable frontend.
+- The bundled bitmap font is readable at the tested desktop sizes but is not a full accessibility system. No screen-reader integration or user-configurable font scaling is supplied. Narrow maps suppress per-road text to reduce clutter; selecting a road still reveals its exact scalar cost.
+- The renderer covers real graph, table, array and event traces. Very large tables use scrolling and may require several interactions to inspect; automated captures do not establish ergonomic quality.
+- The race is strategic graph-based driving rather than continuous steering physics. Road commands, fuel and nitro are validated by the backend.
+- Ordered race candidates expose the existing four presets, with equivalent paths deduplicated. They are not arbitrary user-authored route scripts or a Pareto-front optimizer. Unrestricted exploratory candidates may skip checkpoints and cannot be installed as race plans.
+- Live resource input is requested explicitly, and the backend may use a baseline or example fallback when appropriate. The source badge reports the actual context; infeasible live results remain visible.
+- Seventy-two application rendering checks and 238 GUI contract checks passed. Physical manual driving, keyboard/focus acceptance, additional display scales and exhaustive screen interactions remain pending in the manual matrix. No new backend dependency remains from the original handoff.
