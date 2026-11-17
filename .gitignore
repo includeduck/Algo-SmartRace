@@ -25,3 +25,6 @@ Makefile
 
 # Experiment output under results/ IS committed: the brief requires the raw
 # measurements and result files in the submission.
+
+# Pinned GUI dependency required for offline Windows builds
+!third_party/raylib/lib/raylib.lib
