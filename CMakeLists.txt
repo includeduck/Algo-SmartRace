@@ -103,5 +103,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/src/app")
         add_executable(smartrace_gui_checks src/app/checks/GuiChecks.cpp)
         target_include_directories(smartrace_gui_checks PRIVATE "${CMAKE_SOURCE_DIR}/src/app")
         target_link_libraries(smartrace_gui_checks PRIVATE smartrace_core)
+        # Application-level rendering smoke test: real screens and real backend,
+        # with a separate main so it does not drive the user's desktop.
+        set(SMARTRACE_SMOKE_SOURCES ${SMARTRACE_APP_SOURCES})
+        list(FILTER SMARTRACE_SMOKE_SOURCES EXCLUDE REGEX "/main.cpp$")
+        add_executable(smartrace_gui_smoke ${SMARTRACE_SMOKE_SOURCES} src/app/checks/GuiSmoke.cpp)
+        target_include_directories(smartrace_gui_smoke PRIVATE
+            "${CMAKE_SOURCE_DIR}/src/app"
+            "${CMAKE_SOURCE_DIR}/third_party/raylib/include"
+            "${CMAKE_SOURCE_DIR}/third_party/raygui")
+        target_link_libraries(smartrace_gui_smoke PRIVATE smartrace_core
+            "${CMAKE_SOURCE_DIR}/third_party/raylib/lib/raylib.lib"
+            winmm gdi32 opengl32 user32 shell32)
+        if(MSVC)
+            target_link_options(smartrace_gui_smoke PRIVATE $<$<CONFIG:Debug>:/NODEFAULTLIB:msvcrt.lib>)
+        endif()
     endif()
 endif()

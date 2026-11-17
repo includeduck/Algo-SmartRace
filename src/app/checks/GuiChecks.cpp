@@ -2,6 +2,7 @@
 #include "ui/Format.h"
 #include "ui/OwnedArray.h"
 #include "ui/RaceClock.h"
+#include "ui/LabSource.h"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -124,6 +125,67 @@ namespace
         }
     }
 
+    void V11PresentationContracts()
+    {
+        Check(SMARTRACE_API_VERSION >= 11, "GUI requires the additive v1.1 contract");
+        Check(strcmp(LabSource::Name(LabDataSource::BriefExampleFallback), "EXAMPLE FALLBACK") == 0, "example fallback has an explicit badge");
+        Check(ApiLoadCircuit(0) == ApiStatus::Ok, "load Harbor for presentation contracts");
+        RouteView zero = ApiPlanRoute(0, 0, Preset::Balanced, RouteAlgo::AStar);
+        Check(zero.found && zero.totalCost == 0 && zero.edgePath.count == 0 && zero.vertexPath.count == 1, "endpoint summary handles source equals target");
+        RouteView invalid = ApiPlanRoute(-2, 0, Preset::Balanced, RouteAlgo::Dijkstra);
+        Check(!invalid.found && ApiLastError()[0] != '\0', "invalid endpoints provide an actionable message");
+        RouteCompareView race = ApiCompareRaceRoutes(Preset::Balanced);
+        Check(race.candidates.count > 0, "ordered candidates are available before a race");
+        for (int i = 0; i < race.candidates.count; ++i)
+        {
+            const RouteCandidateView& candidate = race.candidates[i];
+            Check(candidate.sourcePreset >= 0 && candidate.sourcePreset < 4, "only real preset candidates can be applied");
+            Check(candidate.edgePath.count == candidate.vertexPath.count - 1, "candidate overlay has exact road identities");
+            OwnedArray<int> overlay;
+            overlay.Copy(candidate.edgePath);
+            ArrayView<double> costs = ApiEdgeCosts(Preset::Balanced);
+            double sum = 0;
+            for (int j = 0; j < overlay.View().count; ++j)
+            {
+                int edge = overlay.View()[j];
+                Check(edge >= 0 && edge < costs.count && costs[edge] >= 0, "overlay roads have valid nonnegative scalar labels");
+                if (edge >= 0 && edge < costs.count) sum += costs[edge];
+            }
+            Check(fabs(sum - candidate.totalCost) < 0.000001, "displayed road costs sum to candidate scalar cost");
+        }
+        LabInput input = ApiLabDefaultInput();
+        input.useBriefExample = true;
+        Check(ApiLabRun(LabAlgo::KnapsackDp, input) == ApiStatus::Ok, "brief Lab run succeeds");
+        LabRunInfo info = ApiLabRunInfo();
+        Check(info.source == LabDataSource::BriefExample, "badge uses structured metadata rather than result prose");
+        Check(ApiRaceStart() == ApiStatus::Ok, "start live presentation session");
+        Check(ApiCmdAutopilot(false) == ApiStatus::Ok, "pause human decisions while events advance");
+        while (!ApiRaceOver() && ApiRaceSnapshot().timeMs < 40100) ApiRaceStep(1);
+        int frozen = ApiRaceSnapshot().timeMs;
+        input = ApiLabDefaultInput();
+        input.source = 0;
+        input.target = 1;
+        input.useRaceState = true;
+        Check(ApiLabRun(LabAlgo::Dijkstra, input) == ApiStatus::Ok, "weighted Lab runs on the live changed graph");
+        info = ApiLabRunInfo();
+        Check(info.source == LabDataSource::LiveRace && info.sourceVertex == 0 && info.targetVertex == 1, "live badge and selected endpoint markers use actual metadata");
+        ApiLabFrame(ApiLabStepCount() - 1);
+        ApiLabFrame(-1);
+        Check(ApiRaceSnapshot().timeMs == frozen, "seeking a live trace preserves race clock");
+        Check(ApiLabRun(LabAlgo::RefuelDp, input) == ApiStatus::Ok, "live resource trace runs");
+        Check(ApiLabRunInfo().source == LabDataSource::LiveRace, "resource trace declares the live planner origin");
+        ArrayView<double> costs = ApiEdgeCosts(Preset::Balanced);
+        GraphView graph = ApiGetGraph();
+        for (int i = 0; i < graph.edges.count; ++i)
+        {
+            int id = graph.edges[i].id;
+            Check(id >= 0 && id < costs.count, "cost labels index existing road IDs");
+            if (id < 0 || id >= costs.count) continue;
+            Check(graph.edges[i].status == EdgeStatus::Blocked ? costs[id] < 0 : costs[id] >= 0, "blocked and traversable road labels agree with live graph state");
+        }
+        Check(ApiLoadCircuit(0) == ApiStatus::Ok, "restore fresh circuit after presentation session");
+    }
+
     void LabContracts()
     {
         LabInput input = ApiLabDefaultInput();
@@ -152,6 +214,7 @@ int main()
     ExplorerContracts();
     RaceAndChampionship();
     LabContracts();
+    V11PresentationContracts();
     ApiShutdown();
     printf("GUI contract checks: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

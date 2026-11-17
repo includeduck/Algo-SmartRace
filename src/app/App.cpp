@@ -67,6 +67,7 @@ bool App::StartRace()
     if (!Check(ApiRaceStart())) return false;
     state.raceStarted = true;
     state.raceRecorded = false;
+    state.activePreset = ApiGetSettings().defaultPreset;
     ++state.raceSerial;
     RaceSnapshot snapshot = ApiRaceSnapshot();
     for (int i = 0; i < snapshot.racers.count; ++i)
@@ -116,7 +117,9 @@ void App::Draw()
     const char* titles[] = { "Paddock", "Driver handbook", "Race configuration", "Choose a circuit", "Track explorer", "Live race", "Race results", "Championship", "Algorithm lab" };
     Ui::Label(static_cast<float>(GetScreenWidth() - 270), 32, titles[static_cast<int>(m_current)], 20);
     m_screens[static_cast<int>(m_current)]->Draw(*this);
-    Ui::Label(28, static_cast<float>(GetScreenHeight() - 25), "OFFLINE  /  DETERMINISTIC  /  API v1.0       TAB focus  |  ENTER activate", 14, Ui::Muted);
+    char footer[160];
+    snprintf(footer, sizeof(footer), "OFFLINE  /  DETERMINISTIC  /  API v%d.%d       TAB focus  |  ENTER activate", SMARTRACE_API_VERSION / 10, SMARTRACE_API_VERSION % 10);
+    Ui::Label(28, static_cast<float>(GetScreenHeight() - 25), footer, 14, Ui::Muted);
     toast.Draw();
     Ui::End();
 }

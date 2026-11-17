@@ -3,7 +3,7 @@
 
 int main()
 {
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(1440, 900, "Smart Racing Championship");
     SetWindowMinSize(800, 600);
     SetExitKey(KEY_NULL);

@@ -3,6 +3,7 @@
 #include "ui/Theme.h"
 #include "ui/Format.h"
 #include "ui/LabRenderers.h"
+#include "ui/LabSource.h"
 #include "raygui.h"
 #include <cstdio>
 
@@ -11,9 +12,10 @@ namespace
     const char* kNames[] = { "BFS", "DFS", "Dijkstra", "A*", "Kruskal MST", "Track generator", "Knapsack DP", "Greedy pickup", "Refuelling DP", "Merge sort", "Quick sort", "Heap sort", "Event priority queue" };
 }
 
-void LabScreen::Enter(App&)
+void LabScreen::Enter(App& app)
 {
     m_input = ApiLabDefaultInput();
+    m_input.useRaceState = app.state.raceStarted && !ApiRaceOver();
     m_preset = static_cast<int>(m_input.preset);
     m_ready = false;
     m_playing = false;
@@ -23,6 +25,8 @@ void LabScreen::Enter(App&)
     m_displayedModule = m_module;
     m_frame = {};
     m_result[0] = '\0';
+    m_runInfo = {};
+    m_hasEndpointSummary = false;
 }
 
 void LabScreen::Run(App& app)
@@ -38,6 +42,17 @@ void LabScreen::Run(App& app)
     m_codeScroll = 0;
     if (!m_ready) return;
     snprintf(m_result, sizeof(m_result), "%s", ApiLabResultText());
+    m_runInfo = ApiLabRunInfo();
+    snprintf(m_sourceDescription, sizeof(m_sourceDescription), "%s", m_runInfo.description ? m_runInfo.description : "");
+    m_runInfo.description = m_sourceDescription;
+    m_hasEndpointSummary = m_module == 2 || m_module == 3;
+    if (m_hasEndpointSummary)
+    {
+        m_endpointSummary = ApiPlanRoute(m_runInfo.sourceVertex, m_runInfo.targetVertex, m_input.preset, m_module == 2 ? RouteAlgo::Dijkstra : RouteAlgo::AStar);
+        // Keep only scalar fields; borrowed paths belong to the route query.
+        m_endpointSummary.vertexPath = {};
+        m_endpointSummary.edgePath = {};
+    }
     m_graph = ApiLabGraph();
     m_map.Fit(m_graph);
     m_code = ApiLabPseudocode(static_cast<LabAlgo>(m_module));
@@ -102,6 +117,11 @@ void LabScreen::Update(App& app, float dt)
         m_scroll = 0;
     }
     if (action == 12) m_input.useBriefExample = !m_input.useBriefExample;
+    if (action == 13)
+    {
+        m_input.useRaceState = !m_input.useRaceState;
+        if (m_input.useRaceState) m_input.useBriefExample = false;
+    }
     if (m_displayedModule != m_module)
     {
         m_displayedModule = m_module;
@@ -182,9 +202,14 @@ void LabScreen::Inputs(App& app, float x, float& y, float width)
         y += 44;
         Ui::Button(12, { x, y, width, 34 }, m_input.useBriefExample ? "Input: brief A/B/C example" : "Input: circuit pickups");
         y += 48;
-        row("Brief example: budget 10; DP 48, greedy 30. Circuit mode can fall back to that example: read the actual result source.");
+        row("Brief example: budget 10; DP 48, greedy 30. Circuit mode can fall back to the example; the source badge identifies it.");
     }
-    if (m_module == 8) row("Baseline refuelling: current graph, Start/full tank. This is not the live human's remaining-race state.", Ui::Gold);
+    if (m_module >= 6 && m_module <= 8)
+    {
+        Ui::Button(13, { x, y, width, 34 }, m_input.useRaceState ? "Resources: live race requested" : "Resources: pre-race baseline");
+        y += 48;
+        row("Live mode uses current fuel, nitro and remaining laps while a race runs. Otherwise the backend reports baseline or example fallback.", Ui::Muted);
+    }
     if (m_module == 5 || (m_module >= 9 && m_module <= 11))
     {
         Ui::Number({ x + 90, y, width - 90, 32 }, "Seed", &m_seed, 0, 1000000);
@@ -207,7 +232,22 @@ void LabScreen::Inputs(App& app, float x, float& y, float width)
         row("Run once, then replay the recorded steps. The Lab invokes the gameplay implementation.");
         return;
     }
+    row(LabSource::Name(m_runInfo.source), m_runInfo.source == LabDataSource::BriefExampleFallback ? Ui::Gold : Ui::Accent);
+    row(m_sourceDescription);
     row(m_result, Ui::Accent);
+    if (m_hasEndpointSummary)
+    {
+        if (m_endpointSummary.found)
+        {
+            snprintf(line, sizeof(line), "V%d -> V%d: scalar %.6f", m_runInfo.sourceVertex, m_runInfo.targetVertex, m_endpointSummary.totalCost);
+            row(line, Ui::Accent);
+            snprintf(line, sizeof(line), "Distance %.1f / time %.1fs / fuel %.1f", m_endpointSummary.totalDistance, m_endpointSummary.totalTime, m_endpointSummary.totalFuel);
+            row(line);
+            snprintf(line, sizeof(line), "Search expanded %lld / relaxed %lld", m_endpointSummary.expanded, m_endpointSummary.relaxed);
+            row(line);
+        }
+        else row("Selected endpoint is unreachable on the current graph.", Ui::Danger);
+    }
     row("TRACE COUNTERS (not repeated benchmark timings)", Ui::Gold);
     snprintf(line, sizeof(line), "Visited %lld / examined %lld / relaxed %lld", m_frame.visited, m_frame.examined, m_frame.relaxed);
     row(line);
@@ -287,12 +327,28 @@ void LabScreen::Draw(App& app)
     Ui::EndClip();
     if (m_ready)
     {
-        if (m_frame.kind == LabFrameKind::Graph) m_map.Draw(m_graph, {}, {}, &m_frame, m_module == 5);
-        if (m_frame.kind == LabFrameKind::Array) LabRenderers::Array(m_visual, m_frame, ApiChampionshipGetStatus().active);
+        if (m_frame.kind == LabFrameKind::Graph)
+        {
+            int endpoints[] = { m_runInfo.sourceVertex, m_runInfo.targetVertex };
+            m_map.Draw(m_graph, {}, { endpoints, 2 }, &m_frame, m_module == 5);
+            Ui::Scissor(static_cast<int>(m_visual.x), static_cast<int>(m_visual.y), static_cast<int>(m_visual.width), static_cast<int>(m_visual.height));
+            for (int i = 0; i < m_graph.vertices.count; ++i)
+            {
+                const VertexView& v = m_graph.vertices[i];
+                bool source = v.id == m_runInfo.sourceVertex;
+                bool target = v.id == m_runInfo.targetVertex;
+                if (!source && !target) continue;
+                Vector2 p = m_map.Point(v.x, v.y);
+                DrawCircleLinesV(p, 14, source ? Ui::Accent : Ui::Gold);
+                Ui::Label(p.x + 12, p.y + 12, source && target ? "SOURCE = TARGET" : (source ? "SOURCE" : "TARGET"), 14, Ui::Text);
+            }
+            EndScissorMode();
+        }
+        if (m_frame.kind == LabFrameKind::Array) LabRenderers::Array(m_visual, m_frame, m_runInfo.source == LabDataSource::ChampionshipStandings);
         if (m_frame.kind == LabFrameKind::Table) LabRenderers::Table(m_visual, m_frame, m_tableRow, m_tableColumn);
         if (m_frame.kind == LabFrameKind::Events) LabRenderers::Events(m_visual, m_frame, m_events, m_eventOffset);
         Ui::Card(m_pseudocode);
-        BeginScissorMode(static_cast<int>(m_pseudocode.x), static_cast<int>(m_pseudocode.y), static_cast<int>(m_pseudocode.width), static_cast<int>(m_pseudocode.height));
+        Ui::Scissor(static_cast<int>(m_pseudocode.x), static_cast<int>(m_pseudocode.y), static_cast<int>(m_pseudocode.width), static_cast<int>(m_pseudocode.height));
         for (int i = 0; i < m_code.lines.count; ++i)
         {
             float ly = m_pseudocode.y + 15 + i * 25 - m_codeScroll;

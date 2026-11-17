@@ -12,6 +12,7 @@ struct AppState
     bool quit = false;
     int selectedCircuit = 0;
     int raceSerial = 0;
+    Preset activePreset = Preset::Balanced;
     ScreenId labReturn = ScreenId::Menu;
     char racerNames[10][48] = {};
     ResultRowView resultRows[10] = {};

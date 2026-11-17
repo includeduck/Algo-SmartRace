@@ -12,7 +12,7 @@ public:
     Vector2 Point(double x, double y) const;
     int HitVertex(GraphView graph) const;
     int HitEdge(GraphView graph) const;
-    void Draw(GraphView graph, ArrayView<int> edges = {}, ArrayView<int> vertices = {}, const LabFrame* frame = nullptr, bool generator = false) const;
+    void Draw(GraphView graph, ArrayView<int> edges = {}, ArrayView<int> vertices = {}, const LabFrame* frame = nullptr, bool generator = false, ArrayView<double> costs = {}) const;
     void Cars(RaceSnapshot snapshot) const;
 private:
     Vector2 m_center = {};

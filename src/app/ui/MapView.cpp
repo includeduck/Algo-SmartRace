@@ -100,10 +100,10 @@ int MapView::HitEdge(GraphView graph) const
     return -1;
 }
 
-void MapView::Draw(GraphView graph, ArrayView<int> edges, ArrayView<int> vertices, const LabFrame* frame, bool generator) const
+void MapView::Draw(GraphView graph, ArrayView<int> edges, ArrayView<int> vertices, const LabFrame* frame, bool generator, ArrayView<double> costs) const
 {
     Ui::Card(bounds);
-    BeginScissorMode(static_cast<int>(bounds.x), static_cast<int>(bounds.y), static_cast<int>(bounds.width), static_cast<int>(bounds.height));
+    Ui::Scissor(static_cast<int>(bounds.x), static_cast<int>(bounds.y), static_cast<int>(bounds.width), static_cast<int>(bounds.height));
     for (int x = static_cast<int>(bounds.x); x < bounds.x + bounds.width; x += 40)
     {
         DrawLine(x, static_cast<int>(bounds.y), x, static_cast<int>(bounds.y + bounds.height), { 29, 38, 52, 255 });
@@ -132,6 +132,14 @@ void MapView::Draw(GraphView graph, ArrayView<int> edges, ArrayView<int> vertice
         if (highlight) color = e.status == EdgeStatus::Blocked ? Ui::Danger : Ui::Accent;
         DrawLineEx(p, q, highlight ? 6.0f : 3.0f, color);
         Vector2 mid = { (p.x + q.x) / 2, (p.y + q.y) / 2 };
+        if (bounds.width >= 600 && e.id >= 0 && e.id < costs.count)
+        {
+            char costText[32];
+            if (costs[e.id] < 0) snprintf(costText, sizeof(costText), "blocked");
+            else snprintf(costText, sizeof(costText), "%.2f", costs[e.id]);
+            DrawRectangleRec({ mid.x + 4, mid.y - 20, static_cast<float>(MeasureText(costText, 14) + 8), 18 }, Ui::Background);
+            Ui::Label(mid.x + 8, mid.y - 18, costText, 14, color);
+        }
         if (e.directed)
         {
             float angle = atan2f(q.y - p.y, q.x - p.x);
@@ -174,7 +182,7 @@ void MapView::Draw(GraphView graph, ArrayView<int> edges, ArrayView<int> vertice
 
 void MapView::Cars(RaceSnapshot snapshot) const
 {
-    BeginScissorMode(static_cast<int>(bounds.x), static_cast<int>(bounds.y), static_cast<int>(bounds.width), static_cast<int>(bounds.height));
+    Ui::Scissor(static_cast<int>(bounds.x), static_cast<int>(bounds.y), static_cast<int>(bounds.width), static_cast<int>(bounds.height));
     for (int i = 0; i < snapshot.racers.count; ++i)
     {
         const RacerView& r = snapshot.racers[i];

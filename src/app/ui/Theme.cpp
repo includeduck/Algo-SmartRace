@@ -1,5 +1,7 @@
 #include "Theme.h"
 #include "raygui.h"
+#include "rlgl.h"
+#include "WindowCanvas.h"
 #include <cstdio>
 #include <cstring>
 
@@ -11,6 +13,8 @@ namespace
     int g_previousCount = 0;
     bool g_clipped = false;
     Rectangle g_clip = {};
+    int g_canvasWidth = 1;
+    int g_canvasHeight = 1;
 }
 
 void Ui::Init()
@@ -29,6 +33,18 @@ void Ui::Init()
 
 void Ui::Begin()
 {
+    // raylib 5.5 GLFW resets its viewport to logical dimensions on resize.
+    // Keep our windowed canvas and clips in the same DPI coordinate system.
+    g_canvasWidth = GetRenderWidth();
+    g_canvasHeight = GetRenderHeight();
+    WindowCanvas::ClientSize(GetWindowHandle(), &g_canvasWidth, &g_canvasHeight);
+    SetMouseScale(static_cast<float>(GetScreenWidth()) / g_canvasWidth, static_cast<float>(GetScreenHeight()) / g_canvasHeight);
+    rlViewport(0, 0, g_canvasWidth, g_canvasHeight);
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    rlOrtho(0, GetScreenWidth(), GetScreenHeight(), 0, 0, 1);
+    rlMatrixMode(RL_MODELVIEW);
+    rlLoadIdentity();
     g_count = 0;
     if (IsKeyPressed(KEY_TAB) && g_previousCount > 0)
     {
@@ -45,6 +61,7 @@ void Ui::End()
 bool Ui::Button(int id, Rectangle bounds, const char* label, bool enabled, bool selected)
 {
     bool visible = !g_clipped || (bounds.y >= g_clip.y && bounds.y + bounds.height <= g_clip.y + g_clip.height);
+    if (!visible) return false;
     enabled = enabled && visible;
     bool lockMouse = g_clipped && !CheckCollisionPointRec(GetMousePosition(), g_clip);
     if (lockMouse) GuiLock();
@@ -65,11 +82,30 @@ bool Ui::Button(int id, Rectangle bounds, const char* label, bool enabled, bool 
     return pressed && enabled;
 }
 
+int Ui::CanvasWidth()
+{
+    return g_canvasWidth;
+}
+
+int Ui::CanvasHeight()
+{
+    return g_canvasHeight;
+}
+
+void Ui::Scissor(int x, int y, int width, int height)
+{
+    Vector2 dpi = { static_cast<float>(g_canvasWidth) / GetScreenWidth(), static_cast<float>(g_canvasHeight) / GetScreenHeight() };
+    rlDrawRenderBatchActive();
+    rlEnableScissorTest();
+    rlScissor(static_cast<int>(x * dpi.x), static_cast<int>((GetScreenHeight() - y - height) * dpi.y),
+        static_cast<int>(width * dpi.x), static_cast<int>(height * dpi.y));
+}
+
 void Ui::BeginClip(Rectangle bounds)
 {
     g_clipped = true;
     g_clip = bounds;
-    BeginScissorMode(static_cast<int>(bounds.x), static_cast<int>(bounds.y), static_cast<int>(bounds.width), static_cast<int>(bounds.height));
+    Ui::Scissor(static_cast<int>(bounds.x), static_cast<int>(bounds.y), static_cast<int>(bounds.width), static_cast<int>(bounds.height));
 }
 
 void Ui::EndClip()
@@ -83,6 +119,11 @@ int Ui::TakeAction()
     int action = g_action;
     g_action = 0;
     return action;
+}
+
+void Ui::PostAction(int id)
+{
+    if (g_action == 0) g_action = id;
 }
 
 void Ui::ClearAction()
@@ -154,7 +195,7 @@ bool Ui::Number(Rectangle bounds, const char* label, int* value, int min, int ma
 {
     bool visible = !g_clipped || (bounds.y >= g_clip.y && bounds.y + bounds.height <= g_clip.y + g_clip.height);
     bool lockMouse = g_clipped && !CheckCollisionPointRec(GetMousePosition(), g_clip);
-    if (!visible) GuiDisable();
+    if (!visible) return false;
     if (lockMouse) GuiLock();
     int index = visible ? g_count++ : -1;
     if (visible && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(), bounds)) g_focus = index;
@@ -174,6 +215,12 @@ bool Ui::Number(Rectangle bounds, const char* label, int* value, int min, int ma
 
 void Ui::TextBox(Rectangle bounds, char* text, int size, bool* editing)
 {
+    bool visible = !g_clipped || (bounds.y >= g_clip.y && bounds.y + bounds.height <= g_clip.y + g_clip.height);
+    if (!visible)
+    {
+        *editing = false;
+        return;
+    }
     int index = g_count++;
     if (IsKeyPressed(KEY_TAB)) *editing = false;
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(), bounds)) g_focus = index;

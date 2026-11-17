@@ -33,6 +33,10 @@ private:
     ArrayView<LabEventView> m_events = {};
     GeneratorReportView m_generator = {};
     char m_result[512] = {};
+    LabRunInfo m_runInfo = {};
+    char m_sourceDescription[512] = {};
+    RouteView m_endpointSummary = {};
+    bool m_hasEndpointSummary = false;
     MapView m_map;
     Rectangle m_details = {};
     Rectangle m_visual = {};

@@ -30,6 +30,7 @@ private:
     int m_preset = 0;
     char m_seed[24] = {};
     bool m_seedEdit = false;
+    float m_settingsScroll = 0;
 };
 
 class CircuitSelectScreen : public Screen

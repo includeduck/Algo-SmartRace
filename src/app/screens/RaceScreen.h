@@ -30,6 +30,8 @@ private:
     RaceSnapshot m_snapshot = {};
     RacerView m_human = {};
     ResultsView m_order = {};
+    ArrayView<double> m_costs = {};
+    int m_preset = 0;
     Rectangle m_details = {};
     float m_scroll = 0;
     float m_detailHeight = 0;

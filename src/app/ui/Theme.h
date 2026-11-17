@@ -15,10 +15,14 @@ namespace Ui
 
     void Init();
     void Begin();
+    void Scissor(int x, int y, int width, int height);
+    int CanvasWidth();
+    int CanvasHeight();
     void End();
     bool Button(int id, Rectangle bounds, const char* label, bool enabled = true, bool selected = false);
     int TakeAction();
     void ClearAction();
+    void PostAction(int id);
     void BeginClip(Rectangle bounds);
     void EndClip();
     void Label(float x, float y, const char* text, int size = 18, Color color = Text);

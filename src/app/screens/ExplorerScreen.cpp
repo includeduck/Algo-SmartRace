@@ -6,16 +6,23 @@
 #include <cstdio>
 #include <cmath>
 
-void ExplorerScreen::Enter(App&)
+void ExplorerScreen::Enter(App& app)
 {
     m_graph = ApiGetGraph();
     m_map.Fit(m_graph);
-    m_preset = static_cast<int>(ApiGetSettings().defaultPreset);
+    m_live = app.state.raceStarted && !ApiRaceOver();
+    m_preset = static_cast<int>(m_live ? app.state.activePreset : ApiGetSettings().defaultPreset);
     m_source = 0;
     m_target = -1;
     m_scroll = 0;
     m_dirty = true;
     m_selectedVertex = m_selectedEdge = -1;
+    m_candidate = -1;
+    for (int i = 0; i < 7; ++i) m_lastInputs[i] = -99;
+    for (int i = 0; i < m_graph.vertices.count; ++i)
+    {
+        if (m_graph.vertices[i].type == VertexType::Finish) m_routeTarget = m_graph.vertices[i].id;
+    }
 }
 
 void ExplorerScreen::Refresh()
@@ -31,15 +38,22 @@ void ExplorerScreen::Refresh()
     }
     if (m_tab == 3)
     {
-        m_route = ApiPlanLap(static_cast<Preset>(m_preset), static_cast<RouteAlgo>(m_algorithm));
+        Preset preset = static_cast<Preset>(m_preset);
+        RouteAlgo algorithm = static_cast<RouteAlgo>(m_algorithm);
+        m_route = m_routeScope == 0 ? ApiPlanLap(preset, algorithm) : ApiPlanRoute(m_source, m_routeTarget, preset, algorithm);
+        m_routeError[0] = '\0';
+        if (!m_route.found) snprintf(m_routeError, sizeof(m_routeError), "%s", ApiLastError());
         m_routeEdges.Copy(m_route.edgePath);
         m_routeVertices.Copy(m_route.vertexPath);
         m_route.edgePath = m_routeEdges.View();
         m_route.vertexPath = m_routeVertices.View();
-        RouteView other = ApiPlanLap(static_cast<Preset>(m_preset), m_algorithm == 0 ? RouteAlgo::AStar : RouteAlgo::Dijkstra);
+        RouteAlgo otherAlgorithm = m_algorithm == 0 ? RouteAlgo::AStar : RouteAlgo::Dijkstra;
+        RouteView other = m_routeScope == 0 ? ApiPlanLap(preset, otherAlgorithm) : ApiPlanRoute(m_source, m_routeTarget, preset, otherAlgorithm);
         m_comparisonCost = other.totalCost;
         m_comparisonFound = other.found;
+        m_comparisonExpanded = other.expanded;
         m_alternatives = ApiCompareRoutes(static_cast<Preset>(m_preset));
+        m_raceAlternatives = ApiCompareRaceRoutes(static_cast<Preset>(m_preset));
     }
     if (m_tab == 4)
     {
@@ -78,22 +92,69 @@ void ExplorerScreen::Update(App& app, float)
         app.Go(ScreenId::Lab);
         return;
     }
-    if (action >= 30 && action < 34) m_candidate = action - 30;
+    if (action == 23) m_routeScope = 1 - m_routeScope;
+    if (action == 24)
+    {
+        app.Go(ScreenId::Race);
+        return;
+    }
+    if (action >= 30 && action < 34)
+    {
+        m_candidate = action - 30;
+        m_raceCandidate = false;
+    }
+    if (action >= 40 && action < 44)
+    {
+        m_candidate = action - 40;
+        m_raceCandidate = true;
+    }
+    if (action == 50 && m_raceCandidate && m_candidate >= 0 && m_candidate < m_raceAlternatives.candidates.count)
+    {
+        int selected = m_raceAlternatives.candidates[m_candidate].sourcePreset;
+        if (selected >= 0 && selected < 4)
+        {
+            bool applied = false;
+            if (m_live)
+            {
+                applied = app.Check(ApiCmdPreset(static_cast<Preset>(selected)));
+                if (applied) app.state.activePreset = static_cast<Preset>(selected);
+            }
+            else
+            {
+                Settings settings = ApiGetSettings();
+                settings.defaultPreset = static_cast<Preset>(selected);
+                applied = app.Check(ApiSetSettings(settings));
+            }
+            if (applied) m_preset = selected;
+        }
+    }
+    int inputs[] = { m_source, m_target, m_preset, m_algorithm, m_budget, m_routeScope, m_routeTarget };
+    for (int i = 0; i < 7; ++i)
+    {
+        if (inputs[i] != m_lastInputs[i])
+        {
+            m_dirty = true;
+            m_candidate = -1;
+        }
+        m_lastInputs[i] = inputs[i];
+    }
     Rectangle c = app.Content();
     float side = c.width < 1000 ? 290.0f : 360.0f;
     m_map.bounds = { c.x, c.y + 100, c.width - side - 20, c.height - 110 };
     m_details = { c.x + c.width - side, c.y + 100, side, c.height - 110 };
     m_graph = ApiGetGraph();
     if (m_dirty) Refresh();
+    m_costs = ApiEdgeCosts(static_cast<Preset>(m_preset));
     m_map.Update();
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetMousePosition(), m_map.bounds))
     {
         m_selectedVertex = m_map.HitVertex(m_graph);
         m_selectedEdge = m_map.HitEdge(m_graph);
-        if (m_tab == 1 && m_selectedVertex >= 0)
+        if ((m_tab == 1 || (m_tab == 3 && m_routeScope == 1)) && m_selectedVertex >= 0)
         {
             if (IsKeyDown(KEY_LEFT_SHIFT)) m_source = m_selectedVertex;
-            else m_target = m_selectedVertex;
+            else if (m_tab == 1) m_target = m_selectedVertex;
+            else m_routeTarget = m_selectedVertex;
             m_dirty = true;
         }
     }
@@ -181,13 +242,24 @@ void ExplorerScreen::Details(App&, float x, float& y, float width)
     }
     if (m_tab == 3 || m_tab == 4)
     {
-        row(m_tab == 3 ? "CHECKPOINT-AWARE LAP" : "RESOURCE PLANNER", Ui::Accent);
+        row(m_tab == 3 ? "ROUTE PLANNER / API v1.1" : "RESOURCE PLANNER", Ui::Accent);
         Ui::Number({ x + 90, y, width - 90, 34 }, "Preset", &m_preset, 0, 3);
         y += 46;
         row(Format::PresetName(static_cast<Preset>(m_preset)), Ui::Gold);
     }
     if (m_tab == 3)
     {
+        Ui::Button(23, { x, y, width, 36 }, m_routeScope == 0 ? "Scope: ordered lap" : "Scope: selected endpoints");
+        y += 50;
+        if (m_routeScope == 1)
+        {
+            Ui::Number({ x + 90, y, width - 90, 34 }, "Source", &m_source, 0, m_graph.vertices.count - 1);
+            y += 46;
+            Ui::Number({ x + 90, y, width - 90, 34 }, "Target", &m_routeTarget, 0, m_graph.vertices.count - 1);
+            y += 46;
+            row("Endpoint search does not force checkpoints. Click target; Shift-click source.", Ui::Muted);
+        }
+        else if (m_live) row("Lap summary is the Start baseline. Race alternatives below use your live progress.", Ui::Gold);
         Ui::Number({ x + 90, y, width - 90, 34 }, "Method", &m_algorithm, 0, 1);
         y += 46;
         row(m_algorithm == 0 ? "Dijkstra" : "A*", Ui::Gold);
@@ -195,8 +267,9 @@ void ExplorerScreen::Details(App&, float x, float& y, float width)
         y += 54;
         if (!m_route.found)
         {
-            snprintf(line, sizeof(line), "No complete lap: failed leg %d", m_route.blockedLegIndex);
+            snprintf(line, sizeof(line), "No route: failed leg %d", m_route.blockedLegIndex);
             row(line, Ui::Danger);
+            row(m_routeError, Ui::Danger);
         }
         else
         {
@@ -208,19 +281,37 @@ void ExplorerScreen::Details(App&, float x, float& y, float width)
             row(line);
             bool equal = m_comparisonFound && fabs(m_comparisonCost - m_route.totalCost) < 0.000001;
             row(equal ? "Dijkstra / A* costs agree" : "Cost comparison requires attention", equal ? Ui::Accent : Ui::Danger);
+            snprintf(line, sizeof(line), "Expanded: selected %lld / other %lld", m_route.expanded, m_comparisonExpanded);
+            row(line);
+            snprintf(line, sizeof(line), "Relaxed %lld / heap +%lld -%lld", m_route.relaxed, m_route.heapPushes, m_route.heapPops);
+            row(line);
         }
+        row("ORDERED RACE ALTERNATIVES", Ui::Accent);
+        row(m_live ? "From the human's current progress through remaining checkpoints." : "Preserves checkpoint order. Select a candidate, then apply its driving preset.", Ui::Muted);
+        if (m_raceAlternatives.candidates.count == 0) row("No valid race-lap candidate.", Ui::Danger);
+        for (int i = 0; i < m_raceAlternatives.candidates.count; ++i)
+        {
+            const RouteCandidateView& candidate = m_raceAlternatives.candidates[i];
+            snprintf(line, sizeof(line), "%s / cost %.3f", candidate.label, candidate.totalCost);
+            Ui::Button(40 + i, { x, y, width, 34 }, line, true, m_raceCandidate && m_candidate == i);
+            y += 44;
+            snprintf(line, sizeof(line), "%.1f distance / %.1fs / %.1f fuel", candidate.totalDistance, candidate.totalTime, candidate.totalFuel);
+            row(line, Ui::Muted);
+        }
+        Ui::Button(50, { x, y, width, 36 }, "Use selected race route", m_raceCandidate && m_candidate >= 0 && m_candidate < m_raceAlternatives.candidates.count);
+        y += 54;
         row("EXPLORATION ALTERNATIVES", Ui::Gold);
         row("Start-to-Finish candidates may skip checkpoints. Never applied as race plans.", Ui::Muted);
         for (int i = 0; i < m_alternatives.candidates.count; ++i)
         {
             const RouteCandidateView& candidate = m_alternatives.candidates[i];
             snprintf(line, sizeof(line), "%s / %.3f", candidate.label, candidate.totalCost);
-            Ui::Button(30 + i, { x, y, width, 34 }, line, true, m_candidate == i);
+            Ui::Button(30 + i, { x, y, width, 34 }, line, true, !m_raceCandidate && m_candidate == i);
             y += 44;
             snprintf(line, sizeof(line), "%.1f distance / %.1fs / %.1f fuel", candidate.totalDistance, candidate.totalTime, candidate.totalFuel);
             row(line, Ui::Muted);
         }
-        row("All candidates scored under the selected preset. Candidate selection highlights vertices only; exact road IDs are unavailable.", Ui::Muted);
+        row("All candidates scored under the displayed preset. Overlays use exact backend road IDs.", Ui::Muted);
     }
     if (m_tab == 4)
     {
@@ -270,7 +361,15 @@ void ExplorerScreen::Details(App&, float x, float& y, float width)
         row(line);
         snprintf(line, sizeof(line), "Difficulty %d (effective %d)", edge.difficulty, edge.effDifficulty);
         row(line);
-        row("Edge scalar cost is not exposed by the API.", Ui::Muted);
+        if (edge.id >= 0 && edge.id < m_costs.count)
+        {
+            if (m_costs[edge.id] < 0) row("Blocked: excluded from routing.", Ui::Danger);
+            else
+            {
+                snprintf(line, sizeof(line), "Exact scalar cost %.6f", m_costs[edge.id]);
+                row(line, Ui::Accent);
+            }
+        }
     }
 }
 
@@ -280,7 +379,7 @@ void ExplorerScreen::Draw(App& app)
     Ui::Button(1, { c.x, c.y, 100, 36 }, "Paddock");
     Ui::Label(c.x + 120, c.y + 5, m_info.name ? m_info.name : "No circuit", 24);
     Ui::Button(22, { c.x + c.width - 260, c.y, 110, 36 }, "Lab", app.Available(ScreenId::Lab));
-    Ui::Button(21, { c.x + c.width - 140, c.y, 140, 36 }, "Start race", app.Available(ScreenId::Race) && app.state.dataReady && !app.state.raceStarted);
+    Ui::Button(m_live ? 24 : 21, { c.x + c.width - 140, c.y, 140, 36 }, m_live ? "Resume race" : "Start race", app.Available(ScreenId::Race) && app.state.dataReady && (m_live || !app.state.raceStarted));
     const char* tabs[] = { "Overview", "BFS", "DFS", "Routes", "Resources" };
     for (int i = 0; i < 5; ++i)
     {
@@ -288,14 +387,15 @@ void ExplorerScreen::Draw(App& app)
     }
     ArrayView<int> edges = m_tab == 3 ? m_route.edgePath : ArrayView<int>{};
     ArrayView<int> vertices = m_tab == 1 ? m_bfs.path : (m_tab == 2 ? m_cycle.witnessCycle : ArrayView<int>{});
-    if (m_tab == 3 && m_candidate >= 0 && m_candidate < m_alternatives.candidates.count)
+    RouteCompareView candidates = m_raceCandidate ? m_raceAlternatives : m_alternatives;
+    if (m_tab == 3 && m_candidate >= 0 && m_candidate < candidates.candidates.count)
     {
-        edges = {};
-        vertices = m_alternatives.candidates[m_candidate].vertexPath;
+        edges = candidates.candidates[m_candidate].edgePath;
+        vertices = candidates.candidates[m_candidate].vertexPath;
     }
-    m_map.Draw(m_graph, edges, vertices);
+    m_map.Draw(m_graph, edges, vertices, nullptr, false, ApiGetSettings().showCostLabels ? m_costs : ArrayView<double>{});
     Ui::Card(m_details);
-    Ui::BeginClip(m_details);
+    Ui::BeginClip({ m_details.x, m_details.y, m_details.width, m_details.height - 26 });
     float y = m_details.y + 16 - m_scroll;
     Details(app, m_details.x + 16, y, m_details.width - 32);
     m_detailHeight = y - m_details.y + m_scroll;

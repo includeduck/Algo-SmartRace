@@ -21,6 +21,8 @@ private:
     DeadEndsView m_deadEnds = {};
     RouteView m_route = {};
     RouteCompareView m_alternatives = {};
+    RouteCompareView m_raceAlternatives = {};
+    ArrayView<double> m_costs = {};
     PickupView m_pickups = {};
     RefuelView m_refuel = {};
     OwnedArray<int> m_routeEdges;
@@ -34,6 +36,13 @@ private:
     int m_selectedVertex = -1;
     int m_selectedEdge = -1;
     int m_candidate = -1;
+    bool m_raceCandidate = false;
+    bool m_live = false;
+    int m_routeScope = 0;
+    int m_routeTarget = 0;
+    int m_lastInputs[7] = {};
+    long long m_comparisonExpanded = 0;
+    char m_routeError[256] = {};
     bool m_dirty = true;
     double m_comparisonCost = 0;
     bool m_comparisonFound = false;

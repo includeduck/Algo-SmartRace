@@ -94,7 +94,7 @@ void InstructionsScreen::Draw(App& app)
     Ui::BeginClip({ c.x, c.y + 110, c.width, c.height - 110 });
     Ui::Wrap({ c.x, c.y + 116 - m_scroll, c.width, 1100 },
         "Visit every mandatory checkpoint in order on each lap. Cars follow graph roads; blocked roads are excluded. Restrictions change the effective cost.\n\n"
-        "Fuel: start with 100 units. An active station sells up to 40 units per stop; a positive purchase takes 3 seconds. Nitro: start with 1 charge, maximum 3. Each boost gives 1.5x speed for 4 seconds with 2x fuel consumption.\n\n"
+        "Fuel: start with 100 units. An active station sells up to 40 units per stop; a positive purchase takes 3 seconds. Nitro: configured start (0-3), maximum 3. Each boost gives 1.5x speed for 4 seconds with 2x fuel consumption.\n\n"
         "Race: pause or open the Lab to freeze simulation time. Use manual mode to select outgoing roads, or keep autopilot. No valid route: wait up to 60 seconds, then DNF.\n\n"
         "Ranking: 25 / 18 / 15 / 12 / 10 / 8 / 6 / 4 / 2 / 1 points; fastest-lap bonus 1. Ties: wins, sum of positions, best lap, racer ID.\n\n"
         "BFS minimizes road count, not weighted distance. Dijkstra and A* optimize the displayed scalar cost. The Lab replays backend traces; counters are not benchmark studies.", 19);
@@ -107,11 +107,20 @@ void SettingsScreen::Enter(App&)
     m_preset = static_cast<int>(m_draft.defaultPreset);
     snprintf(m_seed, sizeof(m_seed), "%llu", m_draft.eventSeed);
     m_seedEdit = false;
+    m_settingsScroll = 0;
 }
 
 void SettingsScreen::Update(App& app, float)
 {
     int action = Ui::TakeAction();
+    if (action == 3) m_draft.showCostLabels = !m_draft.showCostLabels;
+    m_settingsScroll -= GetMouseWheelMove() * 40;
+    if (IsKeyPressed(KEY_PAGE_DOWN)) m_settingsScroll += 150;
+    if (IsKeyPressed(KEY_PAGE_UP)) m_settingsScroll -= 150;
+    float max = 460 - (app.Content().height - 130);
+    if (max < 0) max = 0;
+    if (m_settingsScroll < 0) m_settingsScroll = 0;
+    if (m_settingsScroll > max) m_settingsScroll = max;
     if (action == 1) app.Go(ScreenId::Menu);
     if (action == 2 && !app.SessionLocked())
     {
@@ -138,16 +147,21 @@ void SettingsScreen::Draw(App& app)
 {
     Rectangle c = app.Content();
     Ui::Label(c.x, c.y + 5, "Race configuration", 30);
+    Ui::BeginClip({ c.x, c.y + 60, c.width, c.height - 130 });
     float x = c.x + 180;
-    Ui::Number({ x, c.y + 76, 220, 36 }, "Laps", &m_draft.laps, 2, 3);
-    Ui::Number({ x, c.y + 132, 220, 36 }, "Opponents", &m_draft.opponentCount, 3, 9);
-    Ui::Number({ x, c.y + 188, 220, 36 }, "Preset 0..3", &m_preset, 0, 3);
-    Ui::Label(x + 240, c.y + 196, Format::PresetName(static_cast<Preset>(m_preset)), 18, Ui::Accent);
-    Ui::Label(c.x, c.y + 254, "Event seed", 18);
-    Ui::TextBox({ x, c.y + 244, 260, 38 }, m_seed, sizeof(m_seed), &m_seedEdit);
-    Ui::Wrap({ c.x, c.y + 310, c.width, 75 }, "Seed controls deterministic events. Starting nitro is frozen at 1. Settings are locked during an active race or championship.");
-    Ui::Button(1, { c.x, c.y + 400, 180, 42 }, "Cancel");
-    Ui::Button(2, { c.x + 200, c.y + 400, 220, 42 }, "Save configuration", !app.SessionLocked());
+    float y = c.y + 76 - m_settingsScroll;
+    Ui::Number({ x, y, 220, 36 }, "Laps", &m_draft.laps, 2, 3);
+    Ui::Number({ x, y + 56, 220, 36 }, "Opponents", &m_draft.opponentCount, 3, 9);
+    Ui::Number({ x, y + 112, 220, 36 }, "Preset 0..3", &m_preset, 0, 3);
+    Ui::Label(x + 240, y + 120, Format::PresetName(static_cast<Preset>(m_preset)), 18, Ui::Accent);
+    Ui::Number({ x, y + 168, 220, 36 }, "Starting nitro", &m_draft.startNitroCharges, 0, 3);
+    Ui::Label(c.x, y + 232, "Reserved seed", 18);
+    Ui::TextBox({ x, y + 224, 260, 38 }, m_seed, sizeof(m_seed), &m_seedEdit);
+    Ui::Button(3, { c.x, y + 286, 440, 36 }, m_draft.showCostLabels ? "Map scalar-cost labels: ON" : "Map scalar-cost labels: OFF");
+    Ui::Wrap({ c.x, y + 346, c.width, 100 }, "Events follow the authored circuit script; the stored seed is reserved for future event generation. Settings apply to the next race and are locked during an active session.");
+    Ui::EndClip();
+    Ui::Button(1, { c.x, c.y + c.height - 48, 180, 42 }, "Cancel");
+    Ui::Button(2, { c.x + 200, c.y + c.height - 48, 220, 42 }, "Save configuration", !app.SessionLocked());
 }
 
 void CircuitSelectScreen::Update(App& app, float)

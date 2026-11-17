@@ -23,6 +23,7 @@ void RaceScreen::Enter(App& app)
         m_map.Fit(m_graph);
     }
     m_clock.Reset();
+    m_preset = static_cast<int>(app.state.activePreset);
     Pull();
 }
 
@@ -31,6 +32,7 @@ void RaceScreen::Pull()
     m_snapshot = ApiRaceSnapshot();
     m_graph = ApiGetGraph();
     m_order = ApiRaceResults();
+    m_costs = ApiEdgeCosts(static_cast<Preset>(m_preset));
     for (int i = 0; i < m_snapshot.racers.count; ++i)
     {
         if (m_snapshot.racers[i].isHuman) m_human = m_snapshot.racers[i];
@@ -99,6 +101,21 @@ void RaceScreen::Update(App& app, float dt)
         app.state.labReturn = ScreenId::Race;
         app.Go(ScreenId::Lab);
         return;
+    }
+    if (action == 14)
+    {
+        m_clock.Reset();
+        app.Go(ScreenId::Explorer);
+        return;
+    }
+    if (action == 13)
+    {
+        Preset preset = static_cast<Preset>((m_preset + 1) % 4);
+        if (app.Check(ApiCmdPreset(preset)))
+        {
+            m_preset = static_cast<int>(preset);
+            app.state.activePreset = preset;
+        }
     }
     if (action == 2)
     {
@@ -184,12 +201,16 @@ void RaceScreen::Draw(App& app)
     Format::Time(time, sizeof(time), m_snapshot.timeMs);
     snprintf(line, sizeof(line), "%s  /  Lap %d of %d  /  Next CP %d", time, m_human.lap, ApiGetSettings().laps, m_human.nextCheckpoint);
     Ui::Label(c.x, c.y + 62, line, 20, Ui::Accent);
-    m_map.Draw(m_graph);
+    m_map.Draw(m_graph, {}, {}, nullptr, false, ApiGetSettings().showCostLabels ? m_costs : ArrayView<double>{});
     m_map.Cars(m_snapshot);
     float x = m_map.bounds.x + m_map.bounds.width + 20;
     float width = c.x + c.width - x;
     Ui::BeginClip(m_details);
     float y = c.y + 108 - m_scroll;
+    snprintf(line, sizeof(line), "Preset: %s", Format::PresetName(static_cast<Preset>(m_preset)));
+    Ui::Button(13, { x, y, width, 32 }, line);
+    Ui::Button(14, { x, y + 44, width, 32 }, "Compare live race routes");
+    y += 94;
     snprintf(line, sizeof(line), "FUEL  %.1f / 100", m_human.fuelTenths / 10.0);
     Ui::Label(x, y, line, 19);
     Ui::Bar({ x, y + 28, width, 10 }, m_human.fuelTenths / 1000.0f, m_human.fuelTenths < 250 ? Ui::Danger : Ui::Accent);
