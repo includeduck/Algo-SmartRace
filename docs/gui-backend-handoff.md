@@ -98,3 +98,35 @@ fixed default.
 All H1–H8 requests above are now resolved in the GUI or supplied partner deliverables. Ordered race alternatives can be selected before/during a race; selected-endpoint searches expose metrics; maps use exact optimized road costs and candidate road IDs; Settings exposes starting nitro; live Lab resources and structured source badges are wired. The event seed is labelled reserved. No further backend API change is requested.
 
 Current verification supersedes the earlier process-blocked audit: Debug/Release backend tests 129/129 (28,480 checks), GUI contracts 238/238 in each, Release application rendering smoke 72/72. The real screen loop completes a championship, tests the 40-second Harbor round trip and captures all modes and Lab view types. Manual input acceptance remains pending; see gui-verification.md and gui-partner-review.md.
+
+## New completeness findings for Person 1 - 19 November 2026
+
+H1-H8 remain closed. The following findings are independent of those API additions.
+They were source-derived in the 18 November completeness audit; the current
+GitHub comparison confirms no subsequent backend source changes. Happy-path
+suite passes do not establish these missing regression cases. No backend-owned
+implementation or packaging script has been changed by the GUI work, and this
+handoff has not been sent through an external messaging service.
+
+| Finding | Source evidence | Requested change and acceptance |
+|---|---|---|
+| F01: active cost-change replanning | `src/sim/RaceEngine.cpp`: `Step` sets `m_needsReplan`; only Waiting recovery consumes it. `InvalidateStalePlans` checks blocked roads, not changed scalar costs. | Consume relevant changes at the next safe vertex decision for active autopilot. Test increased oil/restriction cost, cheaper reopened alternative and simultaneous changes; preserve current edge, time, checkpoints, laps and manual/fixed-opponent choices. |
+| F02: nitro fuel enforcement | `RaceEngine::TryStartNextEdge` checks baseline fuel. `AdvanceOnEdge` applies boosted fuel, clamps a negative tank and still advances the full distance. `CmdActivateNitro` does not validate feasibility. | Specify and implement a fuel-valid mid-edge boost/exhaustion policy. Example: 100 tenths available, baseline edge needs 100, but the boosted traversal needs about 200. Test exact baseline sufficiency, mid-edge activation/expiry, zero fuel, fractional rounding, cost changes and determinism; never allow travel paid by discarded negative fuel. |
+| F03: overlapping service effects | `RaceEngine::OnEvent` unconditionally reactivates a station on an old expiry; booster expiry unconditionally disables it and one stored expiry slot is overwritten. | Track independent lifetimes and preserve base availability. Outages [0,30s] and [10,40s] must keep a station unavailable at 30s. Booster intervals [0,25s] and [10,35s] must survive the first expiry. Define collection semantics; test stale expiry after collection/new activation and same-time order. Preserve oil/speed overlap behavior. |
+| F04: physically feasible pickups | `src/sim/ResourcePlanner.cpp::BuildPickupItems` prices time-reachable detours without actual remaining fuel or validating their reconstructed checkpoint traversal. Public API/Lab reuse this builder. | Reuse backend fuel/route helpers to filter and validate individual and combined chosen detours from the actual origin/resources. Test insufficient fuel on access leg, inactive service, checkpoint-order violations and combined choices. Retain scalar DP/greedy units; compare DP and exhaustive search on the same filtered problem. |
+| F05: numeric import boundary | `src/io/TrackLoader.cpp` parses EDGE fields and calls `Graph::AddEdge` without finite/nonnegative/range checks. Validation can reach routing first; `ApiRaceStart` does not gate on validator success. | Reject malformed/nonfinite/negative distance/time/fuel and difficulty outside 1..5 before graph algorithms, with line/field errors. Preserve supported zero values. Reject or prevent starting unplayable imports. Keep the GUI load-error/retry contract. |
+| F09: omitted package docs | `tools/package.ps1` staging `$folders` omits `docs`, while README links three GUI documents. Existing ZIP contains no docs entries. | Include intended user-facing docs. Run `python src/app/checks/CheckSubmission.py build/package/24I-3071_24I-3000_BSE-5B.zip --source-root .` after final PDF/package creation, in addition to `-Verify`. It checks CRC, required membership, local Markdown links, runtime data and reviewed source/report/result bytes. |
+
+F01-F05 need backend-owned fixes and regression tests before final submission.
+F02 exhaustion policy and F03 collection semantics need an explicit backend
+decision. F06/F08 final artifacts depend on those fixes, actual F07 physical
+acceptance, the latest remote report/diagram, final PDF review and joint package
+verification. A new API version or a GUI-side algorithm duplicate is not needed
+just to route these findings.
+
+F10 is corrected in GUI-owned code: `ui/LabEventStatus.h` derives display status
+from the recorded frame, insertion sequence and applied/cancelled IDs.
+`checks/GuiChecks.cpp` compares each real event operation on all three circuits
+against the labels and replays every frame backwards. The renderer no longer
+labels future rows as scheduled. Current command outcomes are recorded in
+`gui-verification.md`.

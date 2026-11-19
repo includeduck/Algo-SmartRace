@@ -1,18 +1,7 @@
 #include "LabRenderers.h"
+#include "LabEventStatus.h"
 #include "Theme.h"
 #include <cstdio>
-
-namespace
-{
-    bool Contains(ArrayView<int> list, int key)
-    {
-        for (int i = 0; i < list.count; ++i)
-        {
-            if (list[i] == key) return true;
-        }
-        return false;
-    }
-}
 
 void LabRenderers::Array(Rectangle r, const LabFrame& f, bool racerIds)
 {
@@ -87,9 +76,9 @@ void LabRenderers::Events(Rectangle r, const LabFrame& f, ArrayView<LabEventView
     for (int i = offset; i < events.count && i < offset + visible; ++i)
     {
         const LabEventView& e = events[i];
-        const char* status = Contains(f.rejectedIds, e.id) ? "CANCELLED" : (Contains(f.selectedIds, e.id) ? "APPLIED" : "SCHEDULED");
+        const char* status = LabEventStatus::Label(f, e);
         char line[200];
         snprintf(line, sizeof(line), "#%d %s / %dms, P%d, seq%d / %s", e.id, e.type, e.triggerTimeMs, e.priority, e.sequence, status);
-        Ui::Wrap({ r.x + 16, r.y + 52 + (i - offset) * 46, r.width - 32, 42 }, line, 15, Contains(f.rejectedIds, e.id) ? Ui::Danger : Ui::Text);
+        Ui::Wrap({ r.x + 16, r.y + 52 + (i - offset) * 46, r.width - 32, 42 }, line, 15, LabEventStatus::Contains(f.rejectedIds, e.id) ? Ui::Danger : Ui::Text);
     }
 }

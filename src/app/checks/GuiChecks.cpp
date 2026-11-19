@@ -3,6 +3,7 @@
 #include "ui/OwnedArray.h"
 #include "ui/RaceClock.h"
 #include "ui/LabSource.h"
+#include "ui/LabEventStatus.h"
 #include <cstdio>
 #include <cstring>
 #include <cmath>
@@ -186,6 +187,92 @@ namespace
         Check(ApiLoadCircuit(0) == ApiStatus::Ok, "restore fresh circuit after presentation session");
     }
 
+    void EventPlaybackContracts()
+    {
+        bool sawCancellation = false;
+        for (int circuit = 0; circuit < ApiCircuitCount(); ++circuit)
+        {
+            Check(ApiLoadCircuit(circuit) == ApiStatus::Ok, "load circuit for event playback");
+            Check(ApiLabRun(LabAlgo::EventQueue, ApiLabDefaultInput()) == ApiStatus::Ok, "record real circuit event trace");
+            ArrayView<LabEventView> events = ApiLabEvents();
+            int steps = ApiLabStepCount();
+            Check(events.count > 0 && steps > 0, "event regression exercises a nonempty trace");
+            const char** expected = new const char*[events.count];
+            const char** history = new const char*[(steps + 1) * events.count];
+            LabFrame initial = ApiLabFrame(-1);
+            bool initialMatches = initial.heapPushes == 0;
+            for (int i = 0; i < events.count; ++i)
+            {
+                expected[i] = "NOT YET SCHEDULED";
+                history[i] = expected[i];
+                initialMatches = initialMatches && strcmp(LabEventStatus::Label(initial, events[i]), expected[i]) == 0;
+            }
+            Check(initialMatches, "initial frame does not claim any future event is queued");
+            long long pushes = 0;
+            for (int step = 0; step < steps; ++step)
+            {
+                LabFrame frame = ApiLabFrame(step);
+                if (frame.op == LabOp::PushHeap || frame.op == LabOp::Reject || frame.op == LabOp::PopHeap)
+                {
+                    bool found = false;
+                    for (int i = 0; i < events.count; ++i)
+                    {
+                        if (events[i].id == frame.a)
+                        {
+                            found = true;
+                            if (frame.op == LabOp::PushHeap)
+                            {
+                                Check(events[i].sequence == pushes, "recorded PushHeap maps to the next insertion sequence");
+                                expected[i] = "QUEUED";
+                            }
+                            else if (frame.op == LabOp::Reject)
+                            {
+                                expected[i] = "CANCELLED";
+                                sawCancellation = true;
+                            }
+                            else
+                            {
+                                expected[i] = "APPLIED";
+                            }
+                        }
+                    }
+                    Check(found, "event trace operation identifies an actual displayed event");
+                }
+                if (frame.op == LabOp::PushHeap)
+                {
+                    ++pushes;
+                }
+                bool matches = true;
+                for (int i = 0; i < events.count; ++i)
+                {
+                    history[(step + 1) * events.count + i] = expected[i];
+                    matches = matches && strcmp(LabEventStatus::Label(frame, events[i]), expected[i]) == 0;
+                }
+                Check(matches, "event labels match recorded scheduling, cancellation and application at each step");
+            }
+            bool complete = true;
+            for (int i = 0; i < events.count; ++i)
+            {
+                complete = complete && (strcmp(expected[i], "APPLIED") == 0 || strcmp(expected[i], "CANCELLED") == 0);
+            }
+            Check(complete, "final event trace contains only applied or cancelled entries");
+            for (int step = steps - 1; step >= -1; --step)
+            {
+                LabFrame frame = ApiLabFrame(step);
+                bool matches = true;
+                for (int i = 0; i < events.count; ++i)
+                {
+                    matches = matches && strcmp(LabEventStatus::Label(frame, events[i]), history[(step + 1) * events.count + i]) == 0;
+                }
+                Check(matches, "backward seek restores the recorded event labels including the initial frame");
+            }
+            delete[] history;
+            delete[] expected;
+        }
+        Check(sawCancellation, "event playback regression includes real cancelled expiries");
+        Check(ApiLoadCircuit(0) == ApiStatus::Ok, "restore Harbor after event playback checks");
+    }
+
     void LabContracts()
     {
         LabInput input = ApiLabDefaultInput();
@@ -215,6 +302,7 @@ int main()
     RaceAndChampionship();
     LabContracts();
     V11PresentationContracts();
+    EventPlaybackContracts();
     ApiShutdown();
     printf("GUI contract checks: %d checks, %d failures\n", g_checks, g_failures);
     return g_failures == 0 ? 0 : 1;

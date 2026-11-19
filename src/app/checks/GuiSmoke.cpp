@@ -146,6 +146,12 @@ int main()
         if (module == 12)
         {
             Capture(app, "08_lab_events");
+            Action(app, 3);
+            Capture(app, "14_lab_events_initial");
+            Action(app, 6);
+            Capture(app, "15_lab_events_first_push");
+            Action(app, 4);
+            Capture(app, "16_lab_events_rewound");
         }
         Action(app, 3);
         Check(ApiLabFrame(-1).step == -1, "Lab initial seek remains valid");
