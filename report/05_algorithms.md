@@ -119,7 +119,11 @@ Not one of the 12 families, but the reason Dijkstra/A* are correct for racing. A
 - **Benefit v_i** (also tenths of a second): a nitro charge saves 2.0 s (4 s at 1.5× covers 6 s of road). A station is worth 60 s (the recovery wait it avoids), and is offered **only** when the race's refuelling plan is infeasible without a detour.
 - **Budget B** = the allowed extra detour time (default 15.0 s = 150).
 
-Cost, benefit and budget are all in one unit (seconds of race time), so the single budget is a defensible scalar: it doesn't mix fuel with time. Two feasibility rules keep recommendations playable: at most (3 − current charges) nitro pickups are offered (a charge beyond capacity is worthless), and stations are offered only when fuel is actually needed.
+Cost, benefit and budget are all in one unit (seconds of race time), so the single budget is a defensible scalar: it doesn't mix fuel with time. Feasibility rules keep recommendations playable:
+
+- at most (3 − current charges) nitro pickups are offered (a charge beyond capacity is worthless), and stations are offered only when fuel is actually needed;
+- a detour is offered only where it can be **driven** from the racer's actual state: simulating the tank from the current fuel (topping up at active stations the route passes), the detour must never run dry, and the detoured route must complete the same checkpoints in the same order. Among those insertion points the cheapest in time is used;
+- the knapsack treats items as independent, but two detours that each fit the tank may not fit it together. So the **chosen set** is re-checked as one route; while it is not driveable, the chosen item adding the most fuel is withdrawn and the DP (and greedy) are solved again on the smaller item set. DP and greedy are always compared on the same final items (tests `F04_…`).
 
 **State and recurrence.** dp[i][b] = the best total benefit using items 1..i with total cost ≤ b.
 

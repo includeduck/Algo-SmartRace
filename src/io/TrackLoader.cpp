@@ -75,6 +75,47 @@ namespace io
             return s.ToInt();
         }
 
+        // Strict numeric fields for VERTEX/EDGE: the whole token must be a
+        // number, and its magnitude is bounded so it stays finite and
+        // cannot overflow (an over-long digit string is rejected rather
+        // than wrapped). Returns false on any malformed value.
+        const double kMaxFieldMagnitude = 1.0e9;
+        const int kMaxIntDigits = 9;
+
+        bool ReadIntField(const char* tok, int* out)
+        {
+            int digits = 0;
+            for (int i = 0; tok[i] != '\0'; ++i)
+            {
+                if (tok[i] >= '0' && tok[i] <= '9')
+                {
+                    ++digits;
+                }
+            }
+            if (digits == 0 || digits > kMaxIntDigits)
+            {
+                return false;
+            }
+            String s(tok);
+            bool ok = false;
+            *out = s.ToInt(&ok);
+            return ok;
+        }
+
+        bool ReadDoubleField(const char* tok, double* out)
+        {
+            String s(tok);
+            bool ok = false;
+            double value = s.ToDouble(&ok);
+            // value != value is true only for NaN; the magnitude bound also excludes infinities.
+            if (!ok || value != value || value > kMaxFieldMagnitude || value < -kMaxFieldMagnitude)
+            {
+                return false;
+            }
+            *out = value;
+            return true;
+        }
+
         double ParseDoubleToken(const char* tok)
         {
             String s(tok);
@@ -182,8 +223,14 @@ namespace io
                         "VERTEX ids must be declared in order starting at 0");
                 }
 
-                double x = ParseDoubleToken(tokens[2]);
-                double y = ParseDoubleToken(tokens[3]);
+                double x = 0.0;
+                double y = 0.0;
+                if (!ReadDoubleField(tokens[2], &x) || !ReadDoubleField(tokens[3], &y))
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "VERTEX x and y must be finite numbers");
+                }
 
                 bool typeOk = false;
                 model::VertexType type = ParseVertexType(tokens[4], &typeOk);
@@ -194,7 +241,13 @@ namespace io
                         "unknown vertex type");
                 }
 
-                int cpOrder = (tokenCount >= 6) ? ParseIntToken(tokens[5]) : -1;
+                int cpOrder = -1;
+                if (tokenCount >= 6 && !ReadIntField(tokens[5], &cpOrder))
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "VERTEX cpOrder must be an integer");
+                }
 
                 outData->graph->AddVertex(x, y, type, cpOrder);
                 ++nextVertexId;
@@ -226,12 +279,49 @@ namespace io
                         "EDGE references an undeclared vertex");
                 }
 
-                double distance = ParseDoubleToken(tokens[4]);
-                double baseTime = ParseDoubleToken(tokens[5]);
-                double fuelCost = ParseDoubleToken(tokens[6]);
-                int difficulty = ParseIntToken(tokens[7]);
-                bool isShortcut = ParseIntToken(tokens[8]) != 0;
-                bool directed = ParseIntToken(tokens[9]) != 0;
+                // Every weight must be a finite, non-negative number before
+                // any graph algorithm sees it: Dijkstra and A* are only
+                // correct for non-negative edge costs. Zero stays legal.
+                double distance = 0.0;
+                if (!ReadDoubleField(tokens[4], &distance) || distance < 0.0)
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "EDGE distance must be a finite number >= 0");
+                }
+                double baseTime = 0.0;
+                if (!ReadDoubleField(tokens[5], &baseTime) || baseTime < 0.0)
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "EDGE baseTime must be a finite number >= 0");
+                }
+                double fuelCost = 0.0;
+                if (!ReadDoubleField(tokens[6], &fuelCost) || fuelCost < 0.0)
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "EDGE fuelCost must be a finite number >= 0");
+                }
+                int difficulty = 0;
+                if (!ReadIntField(tokens[7], &difficulty)
+                    || difficulty < Rules::kMinEdgeDifficulty || difficulty > Rules::kMaxEdgeDifficulty)
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "EDGE difficulty must be an integer from 1 to 5");
+                }
+                int shortcutFlag = 0;
+                int directedFlag = 0;
+                if (!ReadIntField(tokens[8], &shortcutFlag) || !ReadIntField(tokens[9], &directedFlag)
+                    || (shortcutFlag != 0 && shortcutFlag != 1) || (directedFlag != 0 && directedFlag != 1))
+                {
+                    fclose(file);
+                    return Fail(errorLine, errorMessage, errorMessageCapacity, lineNumber,
+                        "EDGE shortcut and directed flags must be 0 or 1");
+                }
+                bool isShortcut = shortcutFlag != 0;
+                bool directed = directedFlag != 0;
 
                 model::EdgeStatus baseStatus = model::EdgeStatus::Open;
                 if (tokenCount >= 11 && String::StrEquals(tokens[10], "Blocked"))

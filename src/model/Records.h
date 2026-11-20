@@ -53,6 +53,7 @@ namespace model
         int nitroCharges;          // 0..Rules::kMaxNitroCharges
         bool nitroActive;
         int nitroTimeLeftMs;
+        bool nitroHeldForFuel;     // nitro is on but paused: boosting now would eat the fuel reserved for this road
 
         int lap;                    // 1-based
         int nextCheckpoint;           // checkpoint order this racer must reach next (1-based)

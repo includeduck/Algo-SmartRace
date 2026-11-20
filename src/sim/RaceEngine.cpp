@@ -162,6 +162,7 @@ namespace sim
             racer.nitroCharges = config.startNitroCharges;
             racer.nitroActive = false;
             racer.nitroTimeLeftMs = 0;
+            racer.nitroHeldForFuel = false;
             racer.lap = 1;
             racer.nextCheckpoint = 1;
             racer.checkpointsCompletedThisLap = 0;
@@ -194,8 +195,17 @@ namespace sim
         m_needsReplan.Clear();
         for (int i = 0; i < m_racers.Size(); ++i) m_needsReplan.Push(true);
 
-        m_pendingNitroExpireEventId.Clear();
-        for (int i = 0; i < graph->VertexCount(); ++i) m_pendingNitroExpireEventId.Push(-1);
+        m_baseVertexActive.Clear();
+        m_stationOutages.Clear();
+        m_pickupBaseAvailable.Clear();
+        m_activeBoosters.Clear();
+        for (int i = 0; i < graph->VertexCount(); ++i)
+        {
+            const model::Vertex& v = graph->GetVertex(i);
+            m_baseVertexActive.Push(v.active);
+            m_stationOutages.Push(0);
+            m_pickupBaseAvailable.Push(v.type == model::VertexType::NitroPickup && v.active);
+        }
 
         (void)config.eventSeed;   // Phase 2 plays the authored .trk script as-is
         for (int i = 0; i < trackData.events.Size(); ++i)
@@ -333,6 +343,7 @@ namespace sim
             case EventType::FuelStationToggle:
                 if (VertexIs(*m_graph, event.target, model::VertexType::FuelStation))
                 {
+                    ++m_stationOutages[event.target];
                     m_effects->SetVertexActive(event.target, false);
                     m_events->Schedule(EventType::FuelStationReactivate,
                         event.triggerTimeMs + event.durationMs, event.target, 0);
@@ -348,9 +359,18 @@ namespace sim
             case EventType::FuelStationReactivate:
                 if (VertexIs(*m_graph, event.target, model::VertexType::FuelStation))
                 {
-                    m_effects->SetVertexActive(event.target, true);
-                    LogLine("Fuel station reactivated: vertex %d", event.target);
-                    m_graphChangedThisBatch = true;
+                    if (m_stationOutages[event.target] > 0) --m_stationOutages[event.target];
+                    if (m_stationOutages[event.target] == 0)
+                    {
+                        m_effects->SetVertexActive(event.target, m_baseVertexActive[event.target]);
+                        LogLine("Fuel station reactivated: vertex %d", event.target);
+                        m_graphChangedThisBatch = true;
+                    }
+                    else
+                    {
+                        LogLine("Fuel station outage ended at vertex %d; another outage is still active",
+                            event.target);
+                    }
                 }
                 break;
 
@@ -358,10 +378,14 @@ namespace sim
                 if (VertexIs(*m_graph, event.target, model::VertexType::NitroPickup))
                 {
                     m_effects->SetVertexActive(event.target, true);
-                    int expireId = m_events->Schedule(EventType::NitroBoosterExpire,
-                        event.triggerTimeMs + event.durationMs, event.target, 0);
-                    m_pendingNitroExpireEventId[event.target] = expireId;
-                    LogLine("Nitro booster active: vertex %d", event.target);
+                    BoosterLife life;
+                    life.vertex = event.target;
+                    life.expiresAtMs = event.triggerTimeMs + event.durationMs;
+                    life.expireEventId = m_events->Schedule(EventType::NitroBoosterExpire,
+                        life.expiresAtMs, event.target, 0);
+                    m_activeBoosters.Push(life);
+                    LogLine("Nitro booster active: vertex %d (%d active there)", event.target, BoostersAt(event.target));
+                    m_graphChangedThisBatch = true;
                 }
                 else
                 {
@@ -372,9 +396,19 @@ namespace sim
             case EventType::NitroBoosterExpire:
                 if (VertexIs(*m_graph, event.target, model::VertexType::NitroPickup))
                 {
-                    m_effects->SetVertexActive(event.target, false);
-                    m_pendingNitroExpireEventId[event.target] = -1;
-                    LogLine("Nitro booster expired: vertex %d", event.target);
+                    for (int k = 0; k < m_activeBoosters.Size(); ++k)
+                    {
+                        if (m_activeBoosters[k].expireEventId == event.eventId)
+                        {
+                            RemoveBooster(k);
+                            break;
+                        }
+                    }
+                    bool stillLit = BoostersAt(event.target) > 0 || m_pickupBaseAvailable[event.target];
+                    m_effects->SetVertexActive(event.target, stillLit);
+                    LogLine("Nitro booster expired: vertex %d%s", event.target,
+                        stillLit ? " (pickup still active)" : "");
+                    m_graphChangedThisBatch = true;
                 }
                 break;
         }
@@ -448,8 +482,39 @@ namespace sim
     void RaceEngine::AdvanceOnEdge(model::Racer& racer, int index)
     {
         const model::Edge& edge = m_graph->GetEdge(racer.currentEdge);
-        double speed = EdgeTravelSpeed(racer.currentEdge, racer.nitroActive);
         double dtSec = Rules::kSimStepMs / 1000.0;
+        double fuelForWholeEdge = static_cast<double>(EdgeFuelTenthsNeeded(racer.currentEdge));
+
+        // Nitro fuel rule. A road is only started with enough fuel to
+        // drive all of it at the normal rate (TryStartNextEdge), and nitro
+        // doubles consumption. So a boosted tick is allowed only if the fuel
+        // left after it still covers the rest of this road at the normal
+        // rate; otherwise the nitro is HELD for this tick: no boost, no
+        // extra fuel, and its remaining time does not run down, so the
+        // charge is not wasted and resumes once fuel allows (after a refuel
+        // or on a cheaper road). This keeps the invariant
+        //     fuel available >= normal-rate fuel for the rest of the road
+        // on every tick, so the tank can never be driven below zero.
+        // fuelRemainder is fuel already used but not yet deducted, so it is
+        // subtracted from what is available.
+        bool boosting = racer.nitroActive;
+        if (boosting)
+        {
+            double boostedSpeed = EdgeTravelSpeed(racer.currentEdge, true);
+            double boostedDelta = (edge.distance > 0.0) ? (boostedSpeed * dtSec / edge.distance) : 1.0;
+            double boostedCovered = MathUtil::Min(boostedDelta, 1.0 - racer.edgeProgress);
+            double boostedCost = fuelForWholeEdge * boostedCovered * Rules::kNitroFuelMultiplier;
+            double available = racer.fuelTenths - racer.fuelRemainder;
+            double reserveAfter = fuelForWholeEdge * (1.0 - racer.edgeProgress - boostedCovered);
+            boosting = (available - boostedCost >= reserveAfter - 1e-9);
+        }
+        if (racer.nitroActive && !boosting && !racer.nitroHeldForFuel)
+        {
+            LogLine("%s nitro held: not enough fuel to boost on this road", racer.name);
+        }
+        racer.nitroHeldForFuel = racer.nitroActive && !boosting;
+
+        double speed = EdgeTravelSpeed(racer.currentEdge, boosting);
         double progressDelta = (edge.distance > 0.0) ? (speed * dtSec / edge.distance) : 1.0;
 
         // Fuel is charged in proportion to the distance actually covered:
@@ -461,19 +526,21 @@ namespace sim
         // tank at all. The arithmetic is identical every run, so this stays
         // deterministic.
         double coveredFraction = MathUtil::Min(progressDelta, 1.0 - racer.edgeProgress);
-        double fuelForWholeEdge = static_cast<double>(EdgeFuelTenthsNeeded(racer.currentEdge));
-        double fuelMultiplier = racer.nitroActive ? Rules::kNitroFuelMultiplier : 1.0;
+        double fuelMultiplier = boosting ? Rules::kNitroFuelMultiplier : 1.0;
 
         racer.fuelRemainder += fuelForWholeEdge * coveredFraction * fuelMultiplier;
         int wholeTenths = static_cast<int>(racer.fuelRemainder);
         racer.fuelTenths -= wholeTenths;
         racer.fuelRemainder -= wholeTenths;
-        if (racer.fuelTenths < 0) racer.fuelTenths = 0;
+        if (racer.fuelTenths < 0)
+        {
+            racer.fuelTenths = 0;   // unreachable while the invariant above holds; kept as a guard
+        }
 
         racer.edgeProgress += progressDelta;
         racer.totalTimeMs += Rules::kSimStepMs;
 
-        if (racer.nitroActive)
+        if (boosting)
         {
             racer.nitroTimeLeftMs -= Rules::kSimStepMs;
             if (racer.nitroTimeLeftMs <= 0)
@@ -546,13 +613,32 @@ namespace sim
         if (v.type == model::VertexType::NitroPickup && v.active && racer.nitroCharges < Rules::kMaxNitroCharges)
         {
             ++racer.nitroCharges;
-            m_effects->SetVertexActive(racer.currentVertex, false);
-            int pendingId = m_pendingNitroExpireEventId[racer.currentVertex];
-            if (pendingId >= 0)
+
+            // Collecting takes ONE charge: the booster that would expire
+            // soonest (its expiry event is cancelled), or the pickup's base
+            // charge when no booster is active. Any other booster on this
+            // pickup keeps it lit until its own expiry.
+            int vertex = racer.currentVertex;
+            int soonest = -1;
+            for (int k = 0; k < m_activeBoosters.Size(); ++k)
             {
-                m_events->Cancel(pendingId);
-                m_pendingNitroExpireEventId[racer.currentVertex] = -1;
+                if (m_activeBoosters[k].vertex != vertex) continue;
+                if (soonest < 0 || m_activeBoosters[k].expiresAtMs < m_activeBoosters[soonest].expiresAtMs)
+                {
+                    soonest = k;
+                }
             }
+            if (soonest >= 0)
+            {
+                m_events->Cancel(m_activeBoosters[soonest].expireEventId);
+                RemoveBooster(soonest);
+            }
+            else
+            {
+                m_pickupBaseAvailable[vertex] = false;
+            }
+            bool stillLit = BoostersAt(vertex) > 0 || m_pickupBaseAvailable[vertex];
+            m_effects->SetVertexActive(vertex, stillLit);
             LogLine("%s collected nitro at V%d (%d/%d charges)", racer.name, racer.currentVertex,
                 racer.nitroCharges, Rules::kMaxNitroCharges);
         }
@@ -573,6 +659,23 @@ namespace sim
             if (amount <= 0 && NeedsFuel(racer)) amount = Rules::kMaxStationPurchaseTenths;
             if (amount > 0) BeginRefuel(racer, amount);
         }
+    }
+
+    int RaceEngine::BoostersAt(int vertex) const
+    {
+        int count = 0;
+        for (int k = 0; k < m_activeBoosters.Size(); ++k)
+        {
+            if (m_activeBoosters[k].vertex == vertex) ++count;
+        }
+        return count;
+    }
+
+    void RaceEngine::RemoveBooster(int slot)
+    {
+        // Order-preserving removal keeps the scan order (and so tie-breaks
+        // between boosters with equal expiry times) deterministic.
+        m_activeBoosters.RemoveAtOrdered(slot);
     }
 
     void RaceEngine::BeginRefuel(model::Racer& racer, int amountTenths)
@@ -705,6 +808,22 @@ namespace sim
         }
         else
         {
+            // A graph change since this racer's last decision (oil spill,
+            // speed restriction, a reopened road or shortcut, a station
+            // outage) can make another route cheaper even when no planned
+            // road closed. Racers that optimise cost -- the human autopilot
+            // and Opponent 3 -- therefore replan here, at the next vertex:
+            // the road being driven is never abandoned mid-way, and
+            // checkpoint progress, laps and time are untouched. Opponents 1
+            // and 2 keep their fixed preference and replan only when a
+            // planned road closes (InvalidateStalePlans).
+            bool optimisesCost = racer.isHuman || racer.strategyType == model::StrategyType::ShortestPath;
+            if (m_needsReplan[index] && optimisesCost)
+            {
+                racer.plannedEdgeCursor = racer.plannedEdgePathLen;
+                m_needsReplan[index] = false;
+            }
+
             // Short of fuel with no station ahead on the current plan:
             // discard it so ReplanRoute can route through a station.
             bool hasPlan = racer.plannedEdgeCursor < racer.plannedEdgePathLen;

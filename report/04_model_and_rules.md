@@ -75,11 +75,11 @@ All constants live in `src/model/Rules.h` (mirrored in `data/rules.cfg`). They w
 | Laps | 3 (setting: 2 or 3) |
 | Fuel | tank 100.0 units, stored in integer tenths (0–1000); per edge fuelCost × (1 + 0.1 × (effDifficulty − 1)), charged gradually along the edge |
 | Fuel station | up to 40.0 units per stop, fixed 3.0 s stop for any positive purchase, one purchase per visit |
-| Nitro | start with 1 charge (setting 0–3), max 3; 1.5× speed for 4 s, 2× fuel while active; collected from active pickups (a pickup is used up when collected) |
+| Nitro | start with 1 charge (setting 0–3), max 3; 1.5× speed for 4 s, 2× fuel while boosting; collected from active pickups. **Fuel rule:** a boosted tick is allowed only if the fuel left afterwards still covers the rest of the current road at the normal rate; otherwise the nitro is *held* (no boost, no extra fuel, and its 4 s do not run down) until it is affordable again, e.g. after a refuel. The tank can therefore never be driven below zero. |
 | Oil spill | +2 effective difficulty (cap 5), obstacle penalty 0.5, 20 s |
 | Speed restriction | speed cap = 50% of base speed, 15 s |
-| Station outage | 30 s |
-| Nitro booster | pickup active for 25 s or until collected |
+| Station outage | 30 s; overlapping outages are counted, and the station reopens (to its base availability) only when the last one ends |
+| Nitro booster | pickup active for 25 s; overlapping boosters each keep their own expiry, so the pickup stays lit until the last one ends. Collecting takes **one** charge: the booster that would expire soonest (its expiry is cancelled), or the pickup's own charge if no booster is active |
 | Recovery policy | the same for every racer: a racer with no valid route (or not enough fuel for its next road and no reachable station) **waits** at its vertex and re-plans after every graph change; if it is still stuck after **60 s** it is **DNF**. Waiting time counts toward its race time. |
 | Race end | 60 s after the leader finishes, hard cap 15 min |
 | Finish order | finished racers by finish time, ties by lower racer id; then unfinished racers by laps completed, checkpoints completed in the current lap, elapsed time, racer id |
@@ -113,6 +113,10 @@ Each timed effect is stored as its **own node** in the affected edge's effect li
 4. `status` = Blocked, else Restricted if any oil or cap is active, else Open.
 
 An expiry removes only its own effect id and recomputes, so two overlapping oil spills on one road behave correctly: when the first expires the road stays oily until the second does (tested in `EffectManager_OverlappingOilSpills_ExpiringOneKeepsTheOtherActive`).
+
+**Overlapping service events.** Edge effects (oil, speed limits) carry an effect id, as above. Station outages and nitro boosters are tracked the same way per vertex: each outage increments a counter that its own reactivation decrements, and each booster is one (vertex, expiry event) record. So outages over [0, 30 s] and [10, 40 s] keep a station closed until 40 s, and boosters over [0, 25 s] and [10, 35 s] keep a pickup lit until 35 s (tests `F03_…`).
+
+**Track files** are checked when they are loaded, before any algorithm sees them: every numeric field must be a whole, finite number; distance, base time and fuel cost must be ≥ 0 (zero is allowed); difficulty must be an integer from 1 to 5; the shortcut and one-way flags must be 0 or 1. A bad field is reported with its line number and name ("EDGE fuelCost must be a finite number >= 0"). Non-negative weights are what Dijkstra and A* need to be correct. A file that loads but fails the validator (section 5.10) can still be explored, so the Explorer can show why, but a race on it is refused.
 
 **Validation of targets.** When an event fires, the race engine checks its target against the current graph: the edge or vertex must exist, and must be of the right kind for the event type (a shortcut for a shortcut toggle, a fuel station for an outage, a nitro pickup for a booster). An invalid event is rejected with a log line ("FuelStationToggle rejected: vertex 7 is not a fuel station") instead of touching the wrong element. An unknown event type in a track file is ignored with a log line when the race starts.
 

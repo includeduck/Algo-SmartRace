@@ -53,6 +53,116 @@ namespace sim
             return lastCompleted;
         }
 
+        // Drives a route on paper with the engine's fuel rule: every edge
+        // burns EdgeFuelTenths, and at an active station on the route
+        // (including the first vertex) the racer may buy up to the
+        // per-stop limit, capped by the tank. This is the best case for
+        // purchases, which is what "can this be driven at all" needs.
+        // Returns the index of the first edge the tank cannot cover, or -1.
+        int FirstDryEdge(const model::Graph& graph, const DynArray<int>& vertices,
+            const DynArray<int>& edges, int startFuel)
+        {
+            int tank = startFuel;
+            for (int i = 0; i < edges.Size(); ++i)
+            {
+                if (IsActiveStation(graph, vertices[i]))
+                {
+                    tank += Rules::kMaxStationPurchaseTenths;
+                    if (tank > Rules::kMaxFuelTenths) tank = Rules::kMaxFuelTenths;
+                }
+                tank -= EdgeFuelTenths(graph, edges[i]);
+                if (tank < 0) return i;
+            }
+            return -1;
+        }
+
+        struct Insertion
+        {
+            int at;       // route edge index
+            int vertex;     // pickup vertex
+            int id;           // item id, orders several insertions at one edge
+        };
+
+        void AppendPath(const algo::PathResult& path, DynArray<int>* outVertices, DynArray<int>* outEdges)
+        {
+            for (int k = 1; k < path.vertexPath.Size(); ++k) outVertices->Push(path.vertexPath[k]);
+            for (int k = 0; k < path.edgePath.Size(); ++k) outEdges->Push(path.edgePath[k]);
+        }
+
+        // The route with every insertion spliced in: route edge i, when it
+        // has insertions p1..pk, becomes u -> p1 -> ... -> pk -> v (least
+        // time legs, the same pricing the knapsack uses). `ins` must be
+        // sorted by (at, id). *outLastDetourEdge is the index of the last
+        // edge belonging to a detour, -1 if there is none.
+        bool BuildDetouredRoute(const model::Graph& graph, const DynArray<int>& routeVertices,
+            const DynArray<int>& routeEdges, const Insertion* ins, int insCount,
+            const model::CostReferences& refs, DynArray<int>* outVertices, DynArray<int>* outEdges,
+            int* outLastDetourEdge)
+        {
+            outVertices->Clear();
+            outEdges->Clear();
+            *outLastDetourEdge = -1;
+            if (routeVertices.Size() == 0) return false;
+
+            model::Weights timeWeights = TimeOnlyWeights();
+            outVertices->Push(routeVertices[0]);
+            int next = 0;
+            for (int i = 0; i < routeEdges.Size(); ++i)
+            {
+                if (next < insCount && ins[next].at == i)
+                {
+                    int from = routeVertices[i];
+                    while (next < insCount && ins[next].at == i)
+                    {
+                        algo::PathResult leg = algo::Dijkstra(graph, from, ins[next].vertex, timeWeights, refs);
+                        if (!leg.found) return false;
+                        AppendPath(leg, outVertices, outEdges);
+                        from = ins[next].vertex;
+                        ++next;
+                    }
+                    algo::PathResult back = algo::Dijkstra(graph, from, routeVertices[i + 1], timeWeights, refs);
+                    if (!back.found) return false;
+                    AppendPath(back, outVertices, outEdges);
+                    *outLastDetourEdge = outEdges->Size() - 1;
+                }
+                else
+                {
+                    outVertices->Push(routeVertices[i + 1]);
+                    outEdges->Push(routeEdges[i]);
+                }
+            }
+            return true;
+        }
+
+        // A detoured route is acceptable when it ticks off exactly the
+        // checkpoints the plain route does (in order -- ProgressAlong
+        // mirrors the engine's counting), and when its fuel works out: the
+        // tank never runs dry, or -- if the plain route already runs dry,
+        // so the refuel plan must add a station anyway -- it at least lasts
+        // until the last detour is over and the racer is back on the route.
+        bool DetourFeasible(const model::Graph& graph, const DynArray<int>& routeVertices,
+            const DynArray<int>& routeEdges, int fuelTenths, int lastCompleted,
+            const Insertion* ins, int insCount, const model::CostReferences& refs)
+        {
+            DynArray<int> vertices;
+            DynArray<int> edges;
+            int lastDetourEdge = -1;
+            if (!BuildDetouredRoute(graph, routeVertices, routeEdges, ins, insCount, refs,
+                &vertices, &edges, &lastDetourEdge))
+            {
+                return false;
+            }
+            if (ProgressAlong(graph, vertices, lastCompleted) != ProgressAlong(graph, routeVertices, lastCompleted))
+            {
+                return false;
+            }
+
+            int dry = FirstDryEdge(graph, vertices, edges, fuelTenths);
+            if (dry < 0) return true;
+            int plainDry = FirstDryEdge(graph, routeVertices, routeEdges, fuelTenths);
+            return plainDry >= 0 && dry > lastDetourEdge;
+        }
+
         struct CostThenIdOrder
         {
             static int Compare(const algo::PickupItem& a, const algo::PickupItem& b)
@@ -173,8 +283,8 @@ namespace sim
     }
 
     void BuildPickupItems(const model::Graph& graph, const DynArray<int>& routeVertices,
-        const DynArray<int>& routeEdges, int nitroCharges, bool fuelNeeded,
-        DynArray<algo::PickupItem>* outItems, DynArray<PickupInfo>* outInfo)
+        const DynArray<int>& routeEdges, int nitroCharges, int fuelTenths, int lastCompletedCheckpoint,
+        bool fuelNeeded, DynArray<algo::PickupItem>* outItems, DynArray<PickupInfo>* outInfo)
     {
         outItems->Clear();
         outInfo->Clear();
@@ -187,6 +297,10 @@ namespace sim
         DynArray<algo::PickupItem> fuelItems;
         DynArray<double> detourByVertex;
         detourByVertex.Resize(graph.VertexCount());
+        DynArray<int> insertByVertex;
+        insertByVertex.Resize(graph.VertexCount());
+        DynArray<int> extraFuelByVertex;
+        extraFuelByVertex.Resize(graph.VertexCount());
 
         for (int p = 0; p < graph.VertexCount(); ++p)
         {
@@ -197,9 +311,12 @@ namespace sim
             if (isFuel && !fuelNeeded) continue;
             if (OnRoute(routeVertices, p)) continue;   // collected on the way anyway
 
-            // Cheapest place to insert the detour along the route.
+            // Cheapest place to insert the detour along the route, among
+            // the places where it can actually be driven.
             bool found = false;
             double best = 0.0;
+            int bestAt = -1;
+            int bestExtraFuel = 0;
             for (int i = 0; i < routeEdges.Size(); ++i)
             {
                 algo::PathResult toPickup = algo::Dijkstra(graph, routeVertices[i], p, timeWeights, refs);
@@ -208,11 +325,24 @@ namespace sim
                 if (!back.found) continue;
 
                 double detour = toPickup.totalTime + back.totalTime - model::EdgeEffectiveTime(graph, routeEdges[i]);
-                if (!found || detour < best)
+                if (found && detour >= best) continue;
+
+                Insertion one;
+                one.at = i;
+                one.vertex = p;
+                one.id = p;
+                if (!DetourFeasible(graph, routeVertices, routeEdges, fuelTenths, lastCompletedCheckpoint,
+                    &one, 1, refs))
                 {
-                    best = detour;
-                    found = true;
+                    continue;
                 }
+
+                best = detour;
+                bestAt = i;
+                bestExtraFuel = RouteFuelTenths(graph, toPickup.edgePath.Data(), toPickup.edgePath.Size())
+                    + RouteFuelTenths(graph, back.edgePath.Data(), back.edgePath.Size())
+                    - EdgeFuelTenths(graph, routeEdges[i]);
+                found = true;
             }
             if (!found) continue;
             if (best < 0.0) best = 0.0;   // can only happen with a slow route edge; a detour never "saves" time here
@@ -225,6 +355,8 @@ namespace sim
             if (isFuel) item.cost += Rules::kStationStopTimeMs / 100;   // ms -> tenths of a second
 
             detourByVertex[p] = best;
+            insertByVertex[p] = bestAt;
+            extraFuelByVertex[p] = bestExtraFuel;
             if (isNitro)
             {
                 nitroItems.Push(item);
@@ -247,6 +379,8 @@ namespace sim
             PickupInfo info;
             info.isNitro = true;
             info.detourSeconds = detourByVertex[nitroItems[i].vertex];
+            info.insertAt = insertByVertex[nitroItems[i].vertex];
+            info.extraFuelTenths = extraFuelByVertex[nitroItems[i].vertex];
             outInfo->Push(info);
         }
         for (int i = 0; i < fuelItems.Size(); ++i)
@@ -255,8 +389,48 @@ namespace sim
             PickupInfo info;
             info.isNitro = false;
             info.detourSeconds = detourByVertex[fuelItems[i].vertex];
+            info.insertAt = insertByVertex[fuelItems[i].vertex];
+            info.extraFuelTenths = extraFuelByVertex[fuelItems[i].vertex];
             outInfo->Push(info);
         }
+    }
+
+    bool PickupSelectionFeasible(const model::Graph& graph, const DynArray<int>& routeVertices,
+        const DynArray<int>& routeEdges, int fuelTenths, int lastCompletedCheckpoint,
+        const DynArray<algo::PickupItem>& items, const DynArray<PickupInfo>& info,
+        const DynArray<int>& selectedIds)
+    {
+        DynArray<Insertion> ins;
+        for (int s = 0; s < selectedIds.Size(); ++s)
+        {
+            for (int i = 0; i < items.Size(); ++i)
+            {
+                if (items[i].id != selectedIds[s]) continue;
+                Insertion one;
+                one.at = info[i].insertAt;
+                one.vertex = items[i].vertex;
+                one.id = items[i].id;
+                ins.Push(one);
+            }
+        }
+        if (ins.Size() == 0) return true;
+
+        // Insertion sort by (at, id): selections hold a handful of items.
+        for (int i = 1; i < ins.Size(); ++i)
+        {
+            Insertion key = ins[i];
+            int j = i - 1;
+            while (j >= 0 && (ins[j].at > key.at || (ins[j].at == key.at && ins[j].id > key.id)))
+            {
+                ins[j + 1] = ins[j];
+                --j;
+            }
+            ins[j + 1] = key;
+        }
+
+        model::CostReferences refs = model::ComputeReferences(graph);
+        return DetourFeasible(graph, routeVertices, routeEdges, fuelTenths, lastCompletedCheckpoint,
+            ins.Data(), ins.Size(), refs);
     }
 
     bool PlanStationDetour(const model::Graph& graph, int currentVertex, int fuelTenths,

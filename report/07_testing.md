@@ -4,7 +4,7 @@
 
 ## 7.1 Strategy
 
-- **Unit and integration tests** (`tests/`, executable `smartrace_tests`): a small framework written for the project, with no STL. `TEST(name)` registers a function and `CHECK` / `CHECK_EQ` record failures with file and line. The exit code is the number of failed checks. **129 tests, 28 480 checks, all passing** on both the Debug and Release builds.
+- **Unit and integration tests** (`tests/`, executable `smartrace_tests`): a small framework written for the project, with no STL. `TEST(name)` registers a function and `CHECK` / `CHECK_EQ` record failures with file and line. The exit code is the number of failed checks. **147 tests, 28 554 checks, all passing** on both the Debug and Release builds.
 - **Oracles instead of hand-computed answers** wherever possible: DP against exhaustive search, A* against Dijkstra, BFS against a brute-force relaxation, DFS components against union-find, every sort against the other two and against the comparator, top-k against the sorted prefix, the event heap against a merge-sorted reference. The same oracles run again on large inputs in the experiments (section 8): 248 more checks, all passing.
 - **Determinism tests:** the same race run twice gives the same result hash (engine level and through the API), and the same generator seed gives the same track.
 - **API robustness tests:** every call before `ApiInit` and with nothing loaded; bad ids and paths; illegal human commands; snapshot invariants on every step of a full race; settings validation.
@@ -52,14 +52,14 @@
 | | championship standings | `Championship_AccumulatesPointsWinsPositionsAndBestLap`, `Championship_ThreeSortsAgree_TopKMatchesPrefix_ChampionDeclared`, `Championship_UnfinishedFirstPlaceIsNotAWin` |
 | | determinism | `RaceEngine_SameSeedTwice_ProducesSameDeterminismHash`, `Api_SameSettingsTwice_SameResults` |
 
-**Further groups:** data structures (14 tests: growth, wrap-around, heap order and heapify, union-find, pool, string, deterministic RNG, log ring buffer); the three opponent strategies (8); track generation and validation (9: Kruskal, the validator accepting all three circuits and rejecting deliberately broken ones with the right reason, generation across seeds, determinism, impossible parameters, write/read round trip); the Algorithm Lab (9: trace replay of BFS, of each sort and of the knapsack table matches the real result; seeking backwards equals seeking forwards; every Lab module runs; event-queue pop order; a generated track saves, reloads and validates); the API (12: 7 for v1.0 plus 5 for the v1.1 additions).
+**Further groups:** data structures (14 tests: growth, wrap-around, heap order and heapify, union-find, pool, string, deterministic RNG, log ring buffer); the three opponent strategies (8); track generation and validation (9: Kruskal, the validator accepting all three circuits and rejecting deliberately broken ones with the right reason, generation across seeds, determinism, impossible parameters, write/read round trip); the Algorithm Lab (9: trace replay of BFS, of each sort and of the knapsack table matches the real result; seeking backwards equals seeking forwards; every Lab module runs; event-queue pop order; a generated track saves, reloads and validates); the API (12: 7 for v1.0 plus 5 for the v1.1 additions); and the completeness regressions (18, `test_completeness*.cpp`: cost-change replanning, the nitro fuel rule, overlapping outages and boosters, fuel- and checkpoint-feasible pickups, track-file number checks and the race-start gate). We confirmed each of these fails when its fix is reverted.
 
 ## 7.3 Results
 
 | Build | Tests | Checks | Failures | Leaks |
 |---|---|---|---|---|
-| Debug (x64, MSVC 19.51) | 129 | 28 480 | 0 | none reported |
-| Release (x64, /O2) | 129 | 28 480 | 0 | (not instrumented) |
+| Debug (x64, MSVC 19.51) | 147 | 28 554 | 0 | none reported |
+| Release (x64, /O2) | 147 | 28 554 | 0 | (not instrumented) |
 | Experiments' correctness checks (Release) | — | 248 | 0 | — |
 
 Run them with `build/Debug/smartrace_tests.exe` (or `build/Release/…`) from the repository root.
@@ -74,6 +74,14 @@ Testing paid off. These defects were found by tests or experiments during develo
 - **Shortcut legality:** an early version of Opponent 2 could take a shortcut that bypassed a mandatory checkpoint. Shortcuts are now accepted only if they skip plain intersections.
 - **Settings:** `startNitroCharges` was ignored and out-of-range settings were accepted. Both fixed in API v1.0.1.
 - **Event targets:** a station-outage event aimed at a non-station vertex used to deactivate it. Targets are now checked for the right kind.
+
+A completeness review of the backend by the GUI side (19 Nov) found five more, fixed with regression tests:
+
+- **Cost changes did not reroute** (F01): only plans through a *closed* road were rebuilt, so the autopilot drove into a new oil spill and ignored a cheaper reopened road. Cost-optimising racers now replan at their next vertex.
+- **Nitro could overdraw fuel** (F02): a road was started with enough fuel at the normal rate, but nitro doubled consumption and an empty tank was clamped to zero while the car drove on. Nitro is now held whenever boosting would eat the fuel reserved for the rest of the road.
+- **Overlapping outages and boosters** (F03): the first expiry reopened the station or switched off the pickup even while a second event was active. Each lifetime is now tracked on its own.
+- **Pickup detours ignored fuel** (F04): detours were priced by time only, so a recommended detour could be undriveable. Detours and chosen sets are now checked against the actual tank and checkpoint order.
+- **Track files were trusted** (F05): negative, non-numeric or out-of-range edge values reached the routing code, and a circuit that failed validation could still be raced. Both are now rejected.
 
 
 ## 7.5 GUI integration review — 17 November 2026

@@ -71,7 +71,7 @@ if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 if (Test-Path $zip) { Remove-Item -Force $zip }
 New-Item -ItemType Directory -Force $stage | Out-Null
 
-$folders = @('src', 'cli', 'tests', 'bench', 'tools', 'data', 'results', 'third_party', 'report')
+$folders = @('src', 'cli', 'tests', 'bench', 'tools', 'data', 'results', 'third_party', 'report', 'docs')
 foreach ($f in $folders)
 {
     if (Test-Path (Join-Path $root $f))

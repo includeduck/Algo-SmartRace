@@ -30,6 +30,8 @@ namespace Rules
 
     const int kOilSpillDurationMs = 20000;
     const int kOilSpillDifficultyBonus = 2;
+    const int kMinEdgeDifficulty = 1;   // a track file's edge difficulty must be in this range
+    const int kMaxEdgeDifficulty = 5;
     const double kOilSpillObstaclePenalty = 0.5;
 
     const int kSpeedRestrictionDurationMs = 15000;

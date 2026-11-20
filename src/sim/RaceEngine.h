@@ -161,7 +161,26 @@ namespace sim
         char m_lastCommandError[160];
 
         int m_pendingEdgeChoice;                       // human's queued manual choice, -1 if none
-        DynArray<int> m_pendingNitroExpireEventId;       // per vertex, -1 if none pending
+        // Service lifetimes. Outages and boosters on the same vertex may
+        // overlap, so each one is tracked on its own instead of letting the
+        // first expiry flip the vertex back:
+        //  - a station is unavailable while its outage count is > 0, and
+        //    returns to its base availability when the last outage ends;
+        //  - every active booster is one entry (vertex, its expiry event),
+        //    and a pickup stays lit while it has any entry or its base
+        //    (file-defined) charge has not been collected yet.
+        struct BoosterLife
+        {
+            int vertex;
+            int expireEventId;
+            int expiresAtMs;
+        };
+        DynArray<bool> m_baseVertexActive;               // per vertex, as loaded
+        DynArray<int> m_stationOutages;                    // per vertex, active outage count
+        DynArray<bool> m_pickupBaseAvailable;                // per vertex: base nitro not collected yet
+        DynArray<BoosterLife> m_activeBoosters;
+        int BoostersAt(int vertex) const;
+        void RemoveBooster(int slot);
         DynArray<bool> m_needsReplan;                      // per racer
         int m_startVertex;
         int m_finishVertex;

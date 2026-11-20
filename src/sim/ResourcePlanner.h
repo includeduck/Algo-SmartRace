@@ -51,6 +51,8 @@ namespace sim
     {
         bool isNitro;           // false = fuel station
         double detourSeconds;     // extra driving time the detour adds
+        int insertAt;               // the route edge the detour replaces (u = route[insertAt] -> p -> route[insertAt+1])
+        int extraFuelTenths;          // fuel the detour adds over that route edge (may be < 0 for a shorter detour)
     };
 
     // Optional pickups as knapsack items. A candidate is any active nitro
@@ -65,10 +67,27 @@ namespace sim
     //  - at most (max charges - nitroCharges) nitro pickups are offered,
     //    the cheapest ones, since a charge beyond capacity is worthless;
     //  - fuel stations are offered only when `fuelNeeded` (the race's
-    //    refuel plan is infeasible on the route as it stands).
+    //    refuel plan is infeasible on the route as it stands);
+    //  - a detour is offered only where it is physically driveable from the
+    //    racer's actual state (DetourFeasible below): the tank, starting at
+    //    `fuelTenths` and topped up at active stations the route passes,
+    //    must cover the detour, and the detour must leave the checkpoints
+    //    completed after `lastCompletedCheckpoint` unchanged. Among the
+    //    feasible insertion points the cheapest in time is used.
     void BuildPickupItems(const model::Graph& graph, const DynArray<int>& routeVertices,
-        const DynArray<int>& routeEdges, int nitroCharges, bool fuelNeeded,
-        DynArray<algo::PickupItem>* outItems, DynArray<PickupInfo>* outInfo);
+        const DynArray<int>& routeEdges, int nitroCharges, int fuelTenths, int lastCompletedCheckpoint,
+        bool fuelNeeded, DynArray<algo::PickupItem>* outItems, DynArray<PickupInfo>* outInfo);
+
+    // Is a whole SELECTION of pickups driveable together? Each item's
+    // detour is inserted at its insertAt edge (several at one edge are
+    // chained in id order), and the resulting route is checked with the
+    // same fuel and checkpoint rules as a single detour. The knapsack
+    // treats items as independent, so a chosen set must be re-checked:
+    // two detours that each fit the tank may not fit it together.
+    bool PickupSelectionFeasible(const model::Graph& graph, const DynArray<int>& routeVertices,
+        const DynArray<int>& routeEdges, int fuelTenths, int lastCompletedCheckpoint,
+        const DynArray<algo::PickupItem>& items, const DynArray<PickupInfo>& info,
+        const DynArray<int>& selectedIds);
 
     enum class StationChoice
     {

@@ -633,6 +633,17 @@ ApiStatus ApiRaceStart()
         SetError("circuit has no Start/Finish vertex");
         return ApiStatus::Infeasible;
     }
+    if (!g_validation.passed)
+    {
+        // A circuit that loads but fails validation can still be explored
+        // (the Explorer shows why), but it is not raced: the checks cover
+        // exactly what a race needs (reachable ordered checkpoints, fuel
+        // feasibility, a route to Finish).
+        char full[240];
+        snprintf(full, sizeof(full), "circuit failed validation: %s", g_validation.FirstFailure());
+        SetError(full);
+        return ApiStatus::Infeasible;
+    }
 
     delete g_engine;
     g_engine = new sim::RaceEngine();
@@ -1177,11 +1188,51 @@ PickupView ApiPlanPickups(Preset preset, int budgetTenthsSec)
 
     DynArray<algo::PickupItem> items;
     DynArray<sim::PickupInfo> info;
-    sim::BuildPickupItems(*g_graph, lapVertices, lapEdges, origin.nitroCharges, view.fuelNeeded, &items, &info);
+    sim::BuildPickupItems(*g_graph, lapVertices, lapEdges, origin.nitroCharges, origin.fuelTenths,
+        origin.lastCompletedCheckpoint, view.fuelNeeded, &items, &info);
 
+    // Every offered item is driveable on its own, but the knapsack treats
+    // items as independent: two detours that each fit the tank may not fit
+    // it together. While the DP's (or greedy's) chosen set is not
+    // driveable as a whole, withdraw the chosen item that adds the most
+    // fuel (ties: the higher id) and solve again. DP and greedy always end
+    // up compared on the same, final item set.
     algo::AlgoStats dpStats;
-    algo::KnapsackResult dp = algo::KnapsackDp(items.Data(), items.Size(), budgetTenthsSec, &dpStats);
-    algo::KnapsackResult greedy = algo::GreedyPickup(items.Data(), items.Size(), budgetTenthsSec);
+    algo::KnapsackResult dp;
+    algo::KnapsackResult greedy;
+    for (;;)
+    {
+        dpStats = algo::AlgoStats();
+        dp = algo::KnapsackDp(items.Data(), items.Size(), budgetTenthsSec, &dpStats);
+        greedy = algo::GreedyPickup(items.Data(), items.Size(), budgetTenthsSec);
+
+        const DynArray<int>* broken = nullptr;
+        if (!sim::PickupSelectionFeasible(*g_graph, lapVertices, lapEdges, origin.fuelTenths,
+            origin.lastCompletedCheckpoint, items, info, dp.selectedIds))
+        {
+            broken = &dp.selectedIds;
+        }
+        else if (!sim::PickupSelectionFeasible(*g_graph, lapVertices, lapEdges, origin.fuelTenths,
+            origin.lastCompletedCheckpoint, items, info, greedy.selectedIds))
+        {
+            broken = &greedy.selectedIds;
+        }
+        if (broken == nullptr) break;
+
+        int drop = -1;
+        for (int i = 0; i < items.Size(); ++i)
+        {
+            if (!ContainsId(*broken, items[i].id)) continue;
+            if (drop < 0 || info[i].extraFuelTenths > info[drop].extraFuelTenths
+                || (info[i].extraFuelTenths == info[drop].extraFuelTenths && items[i].id > items[drop].id))
+            {
+                drop = i;
+            }
+        }
+        if (drop < 0) break;   // cannot happen: an infeasible selection is non-empty
+        items.RemoveAtOrdered(drop);
+        info.RemoveAtOrdered(drop);
+    }
 
     g_pickupViews.Clear();
     for (int i = 0; i < items.Size(); ++i)

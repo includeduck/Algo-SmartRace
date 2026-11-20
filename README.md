@@ -46,8 +46,8 @@ Run `build/Release/smartrace_gui_checks.exe` from the repository root for 238
 contract checks. `build/Release/smartrace_gui_smoke.exe` exercises the real
 application loop (72 checks) and refreshes actual captures in `report/screenshots/`.
 It opens its own render window; it does not drive the desktop or replace manual
-keyboard/mouse acceptance. Debug and Release backend suites also pass 129 tests
-(28,480 checks). See [verification](docs/gui-verification.md), the completed
+keyboard/mouse acceptance. Debug and Release backend suites also pass 147 tests
+(28,554 checks). See [verification](docs/gui-verification.md), the completed
 [partner review](docs/gui-partner-review.md) and [next-session prompt](docs/gui-next-implementation-prompt.md).
 
 The ten-chapter combined [report](report/24I-3071_24I-3000_BSE-5B_Report.pdf) includes

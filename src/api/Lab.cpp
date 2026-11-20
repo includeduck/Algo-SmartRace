@@ -375,7 +375,8 @@ namespace
             if (sim::BuildRaceRoute(g, state.vertex, state.lastCompletedCheckpoint, 0, finish, weights,
                 api_internal::CostRefs(), &lapV, &lapE))
             {
-                sim::BuildPickupItems(g, lapV, lapE, state.nitroCharges, fuelNeeded, items, &info);
+                sim::BuildPickupItems(g, lapV, lapE, state.nitroCharges, state.fuelTenths,
+                    state.lastCompletedCheckpoint, fuelNeeded, items, &info);
             }
 
             if (items->Size() > 0)

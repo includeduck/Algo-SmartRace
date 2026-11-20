@@ -130,3 +130,25 @@ from the recorded frame, insertion sequence and applied/cancelled IDs.
 against the labels and replays every frame backwards. The renderer no longer
 labels future rows as scheduled. Current command outcomes are recorded in
 `gui-verification.md`.
+
+## Backend response: F01–F05 and F09 fixed (Wasay, 20 Nov 2026)
+
+All six findings were confirmed in the source and are fixed, each with
+regression tests in `tests/test_completeness.cpp` and
+`tests/test_completeness_api.cpp` (18 tests). Every engine-level test was
+checked to fail with its fix reverted. No API change: version 11.
+Debug/Release: `smartrace_tests` 147/147 (28,554 checks), no CRT leak report;
+`smartrace_gui_checks` 370/370. `smartrace_gui_smoke` was not re-run on the
+backend side.
+
+| Finding | Resolution | Tests |
+|---|---|---|
+| F01 | `RaceEngine::TryStartNextEdge`: after any graph change, the human autopilot and Opponent 3 drop their plan at the next vertex decision and replan (A* / their strategy). The current edge, time, checkpoints and laps are untouched. Manual driving is untouched. Opponents 1 and 2 keep their fixed preference and still replan only when a planned road closes (`InvalidateStalePlans`). | `F01_OilSpillAhead_…`, `F01_ReopenedCheaperRoad_…`, `F01_NoGraphChange_…_FixedOpponentKeepsItsRoute` |
+| F02 | **Policy (decision):** a boosted tick is allowed only if fuel left afterwards, minus the not-yet-deducted remainder, covers the rest of the current road at the normal rate. Otherwise the nitro is held for that tick: normal speed, normal fuel, and `nitroTimeLeftMs` does not run down. The held state is `Racer.nitroHeldForFuel`, logged once per hold. This keeps "available ≥ normal-rate need for the rest of the road" on every tick, so the zero clamp is unreachable. Activation keeps its existing checks: holding makes any activation safe. | `F02_Nitro_NeverSpendsFuelTheTankDoesNotHave` (per-tick invariant), `F02_HeldNitro_KeepsItsRemainingTime`, `F02_AffordableNitro_StillBoostsAndExpires` |
+| F03 | **Policy (decision):** stations keep an outage counter, so each outage's reactivation decrements it, and at zero the station returns to its base (as loaded) availability. Each booster is its own (vertex, expiry event, expiry time) record. A pickup is lit while it has any booster or an uncollected base charge. Collecting takes one charge: the soonest-expiring booster (its expiry is cancelled, so no stale expiry), else the base charge. Oil and speed overlap behaviour is unchanged. | `F03_OverlappingStationOutages_…` ([0,30 s] + [10,40 s] → closed at 30 s), `F03_OverlappingBoosters_…` ([0,25 s] + [10,35 s]), `F03_CollectingOneBooster_…_StaleExpiryIsCancelled`, `F03_SameTimeOutageAndReactivation_…` |
+| F04 | `BuildPickupItems` now takes the actual fuel and last completed checkpoint. A detour is offered only at insertion points where it is driveable: a tank simulation from the actual fuel, topping up the per-stop maximum at active stations on the route, never runs dry (or, if the plain route already runs dry, lasts past the detour), and checkpoint progress is unchanged. New `PickupSelectionFeasible` re-checks a chosen set as one route; `ApiPlanPickups` withdraws the most fuel-adding chosen item and re-solves until DP and greedy selections are both driveable. DP and greedy, and DP versus exhaustive, compare on the same filtered items. Scalar units are unchanged. The Lab uses the same filtered items. | `F04_DetourBeyondTheTank_IsNotOffered`, `F04_InactivePickup_IsNotOffered`, `F04_TwoDetoursThatFitAlone_DoNotFitTogether`, `F04_DetourThatWouldSkipCheckpointOrder_IsRejected`, `F04_Api_RepairsAnInfeasibleCombination` |
+| F05 | `TrackLoader`: strict whole-token parsing for VERTEX x/y/cpOrder and every EDGE number. Values must be finite with magnitude ≤ 1e9; distance, baseTime and fuelCost ≥ 0 (zero allowed); difficulty an integer 1–5; shortcut and directed 0 or 1. Errors name the line and field. `ApiRaceStart` refuses a circuit whose validation failed (`Infeasible`, "circuit failed validation: …"); load and explore still work, so the GUI load-error/retry contract is unchanged. | `F05_Loader_RejectsBadEdgeNumbers_…`, `F05_Loader_KeepsZeroAndBoundaryValues`, `F05_Api_ACircuitThatFailsValidation_CannotBeRaced` |
+| F09 | `tools/package.ps1` stages `docs/`. Run `CheckSubmission.py` after the final package as you proposed. | — |
+
+Report chapters 04, 05, 06, 07 and 09 describe the new rules and list these as
+bugs found by review; the PDF was regenerated.

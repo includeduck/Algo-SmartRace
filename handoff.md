@@ -1,4 +1,4 @@
-# Handoff to Rayyan — updated 17 Nov 2026 (evening)
+# Handoff to Rayyan — updated 20 Nov 2026
 
 From Muhammad Wasay Tariq (24I-3071) to Syed Muhammad Rayyan Hassan (24I-3000). Section **BSE-5B** (Software Engineering). Deadline: **Sat 5 Dec 2026, 11:59 PM**.
 
@@ -12,17 +12,31 @@ Thanks for the v1.1 wiring, chapters 1–3 and 10, the screenshots and the combi
 2. **Never** `git push --force` to `main`.
 3. Ownership: **you** own `src/app/`, `third_party/`, `docs/gui-*.md`, the GUI block of `CMakeLists.txt`, `report/build_report.py`, `report/screenshots/` and report chapters 01, 02, 03 and the GUI sections of 07 and 09. **I** own the rest of `src/`, `tests/`, `bench/`, `cli/`, `data/`, `results/`, `tools/` and chapters 04–09. Chapter 10 and the PDF are joint.
 
-## 2. What I verified and changed since your push
+## 2. Your findings F01–F05 and F09: fixed (20 Nov)
 
-| Check | Result on my machine (MSVC 19.51, x64) |
+Thanks for the completeness review: all six findings were real. They are fixed in the backend, each with regression tests (`tests/test_completeness.cpp` and `tests/test_completeness_api.cpp`, 18 tests). I checked that every engine test fails when its fix is reverted. **No API change**: `SMARTRACE_API_VERSION` stays 11 and your code compiles unchanged. The full answer, including the two rule decisions you asked for, is at the end of `docs/gui-backend-handoff.md`.
+
+| # | Fix | What you may see in the GUI |
+|---|---|---|
+| F01 | The human autopilot and Opponent 3 replan at their next vertex after **any** graph change (oil, speed limit, reopened road, outage), not only after a closure. Opponents 1 and 2 keep their fixed preference. | the autopilot now avoids a new oil spill ahead, and takes a reopened road |
+| F02 | **Decision:** nitro is *held* while boosting would eat the fuel reserved for the rest of the current road: no boost, no extra fuel, and its 4 s don't run down. It resumes when affordable. | `RacerView.nitroActive` stays true while held; the log says "… nitro held: not enough fuel to boost on this road" |
+| F03 | **Decision:** outages are counted per station (it reopens when the last ends); each booster has its own expiry; collecting takes the soonest-expiring booster (or the pickup's own charge) and leaves others lit. | stations and pickups stay in the right state with overlapping events |
+| F04 | Pickup detours are offered only if driveable from the actual fuel (topping up at stations on the route) and with checkpoint order intact; a DP/greedy chosen set is re-checked as a whole and repaired. | fewer pickups may be offered when fuel is low; DP and greedy lists can lose an item |
+| F05 | The loader rejects malformed, non-finite, negative or out-of-range edge values (difficulty 1–5, flags 0/1) with the line and field. `ApiRaceStart` returns `Infeasible` with "circuit failed validation: …" for a circuit that loads but fails the validator. | a bad custom file now fails at load; an invalid one can be explored but not raced |
+| F09 | `tools/package.ps1` now packages `docs/`. | — |
+
+Verified on my machine (MSVC 19.51, x64), Debug and Release:
+
+| Check | Result |
 |---|---|
-| Debug and Release build, all 7 targets (incl. `smartrace_gui_smoke`) | pass |
-| `smartrace_tests` Debug and Release | 129/129, 28,480 checks, no leak report |
-| `smartrace_gui_checks` Debug and Release | 238/238 |
-| Your new GUI code against the coding rules (no STL, no smart pointers, Allman, braced bodies) | clean |
-| `smartrace_gui_smoke` | **not run by me** (it rewrites `report/screenshots/`) |
+| Build, all targets | pass, no warnings |
+| `smartrace_tests` | **147/147, 28,554 checks**, no leak report |
+| `smartrace_gui_checks` | 370/370 |
+| `smartrace_cli` championship on C1–C3 | completes |
+| `smartrace_gui_smoke` | **not run by me** (it rewrites `report/screenshots/`); please run it from your isolated folder |
+| Benchmarks | not re-run: no experiment uses the changed code |
 
-My commit `1c45a74`: chapter 7 sections 7.1–7.3 had stale numbers (124 tests / 28,348 checks). They now say 129 / 28,480, so I removed your sentence in 7.5 that explained "the earlier 124-test table". I regenerated the PDF with your `build_report.py` (still 48 pages). **Pull before you touch the report.**
+Report updated for the fixes: chapter 4 (nitro fuel rule, overlapping events, track-file checks), 5.6a (feasible pickups), 6 (replanning), 7 (counts, new test group, the five bugs) and 9 (limitations). PDF regenerated. Your 7.5 table still shows your 19 Nov counts (129 tests); please refresh it after your next run.
 
 ## 3. Build and check (before every push)
 
@@ -30,8 +44,8 @@ My commit `1c45a74`: chapter 7 sections 7.1–7.3 had stale numbers (124 tests /
 cmake -S . -B build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Debug
 cmake --build build --config Release
-build\Debug\smartrace_tests.exe          # expect 129/129, no "Detected memory leaks!"
-build\Debug\smartrace_gui_checks.exe     # expect 238 checks, 0 failures
+build\Debug\smartrace_tests.exe          # expect 147/147, no "Detected memory leaks!"
+build\Debug\smartrace_gui_checks.exe     # expect 370 checks, 0 failures
 ```
 
 ## 4. What you still need to do
