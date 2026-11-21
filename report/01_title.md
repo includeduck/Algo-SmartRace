@@ -11,10 +11,11 @@
 | Muhammad Wasay Tariq | 24I-3071 | Backend algorithms, simulation, experiments and backend report chapters |
 | Syed Muhammad Rayyan Hassan | 24I-3000 | Native GUI, interaction, visualization and GUI integration |
 
-**Report revision:** 17 November 2026
+**Report revision:** 21 November 2026
 **Submission deadline:** 5 December 2026, 11:59 PM
 
-This review edition combines the team's report chapters with API v1.1 GUI
-integration. Automated verification and any remaining manual acceptance work
+This technical report combines the team's report chapters with API v1.1 GUI
+integration and the completeness corrections verified on 21 November. Automated
+verification and remaining manual acceptance work
 are distinguished in Chapter 7. Screenshots, where present, come from rendering
 the real application with real circuit and championship data.

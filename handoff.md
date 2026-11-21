@@ -1,10 +1,30 @@
-# Handoff to Rayyan — updated 20 Nov 2026
+# Project handoff - updated 21 November 2026
 
 From Muhammad Wasay Tariq (24I-3071) to Syed Muhammad Rayyan Hassan (24I-3000). Section **BSE-5B** (Software Engineering). Deadline: **Sat 5 Dec 2026, 11:59 PM**.
 
 Thanks for the v1.1 wiring, chapters 1–3 and 10, the screenshots and the combined PDF. I pulled your three commits (`69aa570`, `a6bc6c1`, `2668111`) and checked them on my machine. Everything builds and passes. This page now lists **only what is still left**, most of which is yours.
 
 ---
+
+## 0. Current status from Rayyan - 21 November
+
+Wasay's commit `31af129` has been pulled and independently verified on MSVC
+19.50: Debug and Release each pass 147 backend tests / 28,554 checks and 370 GUI
+checks; the isolated Release rendering smoke passes 78 checks, including the
+three-race championship. F01-F05/F09 have backend fixes and regression coverage;
+F10 has the event-label correction and forward/backward playback checks.
+
+The report now uses the current results and neutral technical-report wording.
+The latest architecture diagram and backend chapters are retained. The portable
+path cleanup was already completed on 19 November. Current package/PDF command
+outcomes are maintained in `docs/gui-delivery-verification.md` and current
+finding status in `docs/gui-implementation-progress.md`. Earlier dated logs are
+historical evidence, not current outstanding backend requests.
+
+Physical keyboard/mouse acceptance, other display scales and joint release
+review remain pending. No Classroom submission has been made. A package built
+now is a verified candidate only to the extent recorded in the delivery log;
+it must not be called fully accepted until those human checks are complete.
 
 ## 1. Rules (unchanged)
 
@@ -52,11 +72,11 @@ build\Debug\smartrace_gui_checks.exe     # expect 370 checks, 0 failures
 
 ### 4.1 Manual acceptance (the biggest open item)
 
-Your own `docs/gui-verification.md` says the "Still manual" column has not been done. Nobody has driven the game with a real mouse and keyboard yet, and the viva will. Do each row, then mark it in `docs/gui-verification.md` with what you actually saw:
+Your own `docs/gui-verification.md` says the "Still manual" column has not been done. No physical mouse/keyboard acceptance outcomes have been recorded yet, and the viva will exercise those controls. Do each row, then mark it in `docs/gui-verification.md` with what you actually saw:
 
 | Area | Do this by hand |
 |---|---|
-| Data loading | Rename `data/` temporarily, start the game, press Retry after restoring it |
+| Data loading | Use an isolated game copy with missing data, restore only that copy, then click Retry |
 | Routes | Click and Shift-click endpoints; open every candidate; "Use this route" before and during a race |
 | Race | Autopilot off: choose roads, wait at the C1 Harbor closure (40 s) until it reopens, buy fuel at a station, use nitro |
 | Resources | Scroll the wide refuelling DP table; check every budget |
@@ -67,33 +87,35 @@ Your own `docs/gui-verification.md` says the "Still manual" column has not been 
 
 Also run the Release build from `build\Release\` and do one complete 3-race championship there. If anything breaks, fix it in `src/app/`, or write it in `docs/gui-backend-handoff.md` if it's a backend issue, and tell me.
 
-### 4.2 Report text to finalise (your sections)
+### 4.2 Documentation and PDF status
 
-Once 4.1 is done, the report must stop saying the manual pass is pending:
+The GUI testing section now records 147/28,554 backend checks, 370 GUI checks and
+78 rendering checks, with MSVC 19.50 distinguished from Wasay's 19.51 results.
+The title/footer/README use the 21 November technical-report revision. The
+conclusion reports measured outcomes instead of an internal review instruction.
+Physical acceptance remains explicitly unverified; replace that status only
+when actual observations are supplied. See `docs/gui-delivery-verification.md`
+for the PDF regeneration, visual review and package evidence.
 
-1. **`report/build_report.py` line 79:** the page footer says "Review edition, 17 November 2026". Change it to the final wording (e.g. "Final report, December 2026").
-2. **`01_title.md` line 17:** "This review edition combines …". Replace it with final wording, or delete it.
-3. **`07_testing.md` 7.5:** replace "No manual usability pass is claimed" and the pending list with the actual manual results. Also, 7.5 says MSVC **19.50** while my chapters say 19.51. Use whichever your machine reports, but say both if they differ.
-4. **`07_testing.md` 7.6** says "the unchanged partner packaging script". Write "the packaging script (`tools/package.ps1`)" instead. The examiner doesn't know who "the partner" is. Re-run 7.6 after the final package (section 4.4) and update it.
-5. **`09_challenges_limitations.md` 9.4:** the last bullet says manual acceptance is pending. Update it.
-6. **`10_conclusion.md`:** "Both members should review the remaining manual matrix before submission." That's a note to us, not a conclusion. Replace it with the outcome.
-7. **`report/README.md`:** retitle the "Combined review edition" section (or drop it).
-8. Then run `python report/build_report.py` and commit the PDF.
+### 4.3 Portable documentation
 
-### 4.3 Small cleanup
+Completed: machine-specific username paths were removed from the partner-review
+document, and `build/partner-review` is identified as local historical context,
+not an evaluator requirement. The package includes linked GUI documentation.
 
-- **`docs/gui-partner-review.md` line 32** contains your Windows user folder path (`C:/Users/<you>/AppData/...`). Replace it with something generic like "a short path such as `C:\sr`". That file goes into the ZIP.
-- The same file refers to `build/partner-review` as "the current clean integration checkout". It's a local folder that won't exist for anyone else, so say so or drop the sentence.
+### 4.4 Package and final release gates
 
-### 4.4 Final package (joint, Fri 4 Dec)
-
-The ZIP you built on 17 Nov is **out of date**, because the report and docs changed afterwards. Rebuild it at the end, after the final PDF is committed:
+Use the current candidate and evidence in `docs/gui-delivery-verification.md`.
+Reproduce `tools/package.ps1 -Verify` from a short checkout path, followed by:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/package.ps1 -Verify      # section defaults to BSE-5B
+python src/app/checks/CheckSubmission.py build/package/24I-3071_24I-3000_BSE-5B.zip --source-root .
 ```
 
-You found that the clean-folder rebuild fails from a deeply nested path. Run it from a short checkout path (e.g. clone into `C:\sr`). Then open the ZIP once by hand and check that `bin\smartrace.exe` starts with `bin\data\` next to it, and that the PDF opens.
+Before submission: complete 4.1, incorporate observed GUI/report changes,
+regenerate the PDF and candidate if source changes, jointly review the final
+ZIP/PDF and complete the viva walkthrough. Upload to Classroom only when one
+member explicitly performs/authorizes submission; packaging is not submission.
 
 ## 5. What I still do
 

@@ -12,11 +12,15 @@ roles observable through routes, resources, changing roads, traces and rankings.
 API v1.1 also removes the earlier need for guessed road overlays or prose-based
 identification of Lab inputs.
 
-Automated checks and real rendered screenshots support the current review.
-They do not replace final manual driving and accessibility acceptance. The
-submission package has been extracted, rebuilt and tested successfully from a
-short Windows path. Both members should review the remaining manual matrix
-before submission.
+The integrated application passed 147 backend tests (28,554 checks) and 370 GUI
+contract checks in both Debug and Release on 21 November. The Release renderer
+passed 78 checks, including a complete three-race championship. The completeness
+fixes cover cost-change replanning, fuel-valid nitro, overlapping service events,
+pickup feasibility and imported-track validation. These results support the
+implementation's automated correctness evidence; physical driving, keyboard
+usability, additional display scales and joint release review remain unverified.
+The current candidate's packaging evidence is recorded separately in Chapter 7
+and docs/gui-delivery-verification.md.
 
 ## 10.1 Acknowledgements
 
@@ -35,13 +39,11 @@ before submission.
 
 ## 10.2 References
 
-1. Smart Racing Championship project assignment, Design and Analysis of
-   Algorithms, Sections 1-9; deadline 5 December 2026.
+1. Smart Racing Championship project assignment, Design and Analysis of Algorithms, Sections 1-9; deadline 5 December 2026.
 2. raylib official source and release: https://github.com/raysan5/raylib/tree/5.5
 3. raygui official source: https://github.com/raysan5/raygui/tree/4.0
 4. matplotlib documentation: https://matplotlib.org/stable/
 5. ReportLab project: https://www.reportlab.com/
 6. Reproducibility evidence: results/raw/, results/summary/,
    results/hardware.txt and results/RESULTS.md in this repository.
-7. Implementation and verification: src/api/SmartRaceApi.h,
-   docs/gui-verification.md, tests/ and src/app/checks/.
+7. Implementation and verification: src/api/SmartRaceApi.h, docs/gui-verification.md, tests/ and src/app/checks/.

@@ -1,3 +1,5 @@
+> Current status, 21 November: Wasay's F01-F05/F09 fixes were pulled and independently passed Debug/Release 147 tests / 28,554 checks and 370 GUI checks; Release rendering smoke passed 78. Current delivery evidence is in `gui-delivery-verification.md`; current finding status is in `gui-implementation-progress.md`. Earlier dated sections below remain historical evidence. Physical input acceptance is pending.
+
 # Partner integration review — 17 November 2026
 
 Reviewed main at 16c0304a83a85da54ae74c48fb29764093dfdcd2 after a clean clone and fast-forward pull. Partner Phase 5 and Phase 6 are present: experiments, committed raw/summary measurements, charts, backend report chapters, tests and packaging. API v1.1 (macro 11) answers the handoff requests. No backend algorithm, race rule, circuit, measurement or existing test was changed by this GUI integration.

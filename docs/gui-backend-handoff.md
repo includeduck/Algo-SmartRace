@@ -1,3 +1,5 @@
+> Current status, 21 November: Wasay's F01-F05/F09 fixes were pulled and independently passed Debug/Release 147 tests / 28,554 checks and 370 GUI checks; Release rendering smoke passed 78. Current delivery evidence is in `gui-delivery-verification.md`; current finding status is in `gui-implementation-progress.md`. Earlier dated sections below remain historical evidence. Physical input acceptance is pending.
+
 # GUI / backend integration handoff
 
 17 November 2026. GUI contributor: Syed Muhammad Rayyan Hassan (24I-3000).

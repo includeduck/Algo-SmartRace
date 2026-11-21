@@ -25,10 +25,10 @@ The brief (section 9.2) asks for one PDF with ten parts. This folder holds them 
 - Python 3 with matplotlib — used only to draw the report's charts from the benchmark CSVs (`tools/plot_results.py`) and to author the hand-made circuit files (`tools/gen_circuits.py`). Neither is part of the game or its build.
 - No other third-party code. Every algorithm and data structure in the game is our own.
 
-**Making the PDF.** Any of these works: open the Markdown files in VS Code with a "Markdown PDF" extension; paste them into Word or Google Docs and export to PDF; or install pandoc and run `pandoc 01_title.md … 10_conclusion.md -o report.pdf`. Save the result as `report/24I-3071_24I-3000_BSE-5B_Report.pdf`. `tools/package.ps1` warns if `report/` has no PDF.
+**Making the PDF.** Run `python report/build_report.py` from the repository root. It assembles all ten chapters, the architecture figure, actual application captures and measured charts into `report/24I-3071_24I-3000_BSE-5B_Report.pdf`. Dependencies are ReportLab, Pillow and Windows Arial fonts. Keep automated evidence and remaining physical acceptance distinct.
 
 
-## Combined review edition — 17 November 2026
+## Combined technical report - 21 November 2026
 
 All ten chapter sources are now present. Rayyan completed 01–03, appended GUI testing to 07 and limitations to 09, checked the screen mappings in 06, and added the joint conclusion/acknowledgements in 10. The partner's backend chapters and measured results were preserved.
 

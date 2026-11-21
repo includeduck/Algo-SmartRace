@@ -1,7 +1,32 @@
-# Next session prompt — final manual acceptance
+# Next session - physical acceptance and joint release review
 
-Use the latest Algo-SmartRace main. Pull with --ff-only and inspect any local changes before work. Read handoff.md, docs/gui-partner-review.md and docs/gui-verification.md. API v1.1 integration and report assembly are implemented; do not repeat backend Phases 5/6 or invent another backend task.
+Read `handoff.md`, `docs/gui-verification.md`, `docs/gui-implementation-progress.md`
+and `docs/gui-delivery-verification.md`. Pull normally and preserve local work.
+F01-F05/F09 were fixed by Wasay in 31af129; F10 is corrected in the GUI. Do not
+repeat those implementations or overwrite measured experiments/backend chapters.
 
-Execute the still-manual column of the verification matrix using the real GUI: keyboard focus/text entry; physical manual road/fuel/nitro/wait controls; 1280×720 and other Windows display scales; wide refuel-table scrolling; intermediate Lab stepping/playback and generated-track save/explore. Preserve session pause/time through live Explorer/Lab round trips. Record actual evidence, fix only reproduced GUI issues, and rerun checks appropriate to those changes. Keep algorithms, circuits, measurements and partner-owned backend sources intact.
+The remaining acceptance work requires actual keyboard/mouse interaction:
 
-Run the GUI contract checks and rendering smoke, rebuild the report if screenshots or text change, and use tools/package.ps1 -Verify for the final archive. Report what was actually exercised separately from automated actions. Pull again before a normal push and make meaningful commits; never force-push. If everything passes, report that result instead of creating speculative work.
+1. Launch the Release game with adjacent data. Use an isolated copy for missing-
+   data Retry; never rename or delete the authored source data as a test.
+2. Click/Shift-click route endpoints and inspect/apply every candidate before
+   and during a race. Verify pause/time retention through Explorer/Lab returns.
+3. Turn autopilot off and choose roads, wait through the Harbor closure/reopen,
+   buy/skip fuel, activate nitro and observe held-nitro behavior in the log.
+4. Navigate wide DP tables, representative zero/max budgets, unavailable service
+   and infeasible cases. Exercise each sort/top-k/history control.
+5. Exercise every Lab playback rate, step/back/drag seek and seed-2 generator
+   Save -> explore -> play. Confirm session locks preserve active races.
+6. Check keyboard focus/text input, 1280x720 and 100%/150% Windows display scales.
+
+Record observations by row in gui-verification.md. If no native input tool is
+available, ask the user to perform these and report results; do not count smoke
+screenshots or Ui::PostAction as physical acceptance. Fix only reproduced GUI
+issues; route new backend issues through the handoff unless separately authorized.
+
+After actual acceptance, update the report with those results, regenerate/review
+the combined PDF, run tools/package.ps1 -Verify from a short path, and run the
+read-only contents checker with --source-root. Rebuild/recheck affected code,
+commit, synchronize normally and push without force. Jointly review the final
+PDF/ZIP and complete the viva walkthrough. Classroom submission requires explicit
+authorization; a candidate build does not establish that it was submitted.

@@ -1,3 +1,29 @@
+# Current verification - 21 November 2026
+
+This summary supersedes outstanding-status statements in the dated history below.
+Baseline `31af129` includes Wasay's F01-F05/F09 corrections. Fresh local Debug
+and Release builds passed; each backend suite passed 147 tests / 28,554 checks,
+each GUI suite passed 370 checks, and the isolated Release renderer passed 78.
+MSVC 19.50 was used here; Wasay independently reports MSVC 19.51. Logs are
+`build/wasay-debug-tests-20261121.log`, `build/wasay-release-tests-20261121.log`
+and `build/verification-20261121/smoke.log`. No CRT leak report was observed in
+the Debug backend run. No claim of a full interactive GUI leak audit is made.
+
+F01-F05 and F09 have implementation/regression evidence; F10 is corrected and
+covered by event-frame checks. The previous remote-synchronization blocker is
+resolved. The physical acceptance matrix remains pending: automated screen
+actions do not establish mouse/keyboard dispatch, focus ergonomics, text entry,
+manual refuel/nitro/wait behavior, generator save/play interaction or additional
+Windows display scales. No native desktop input tool is available in this
+session. No OS security/display settings were changed.
+
+Fresh 21 November application captures replace the report gallery; these are
+automated framebuffer captures, not a physical usability pass. PDF and package
+checks are recorded separately in `gui-delivery-verification.md`. Current
+finding status is in `gui-implementation-progress.md`.
+
+## Historical verification records
+
 # GUI verification — 17 November 2026
 
 Integration baseline: main 16c0304a83a85da54ae74c48fb29764093dfdcd2, API v1.1. The earlier publication audit could only compile due to process restrictions. This review supersedes that runtime limitation: native builds, checks and the application's renderer now executed successfully in build/partner-review. The original root checkout remains preserved.

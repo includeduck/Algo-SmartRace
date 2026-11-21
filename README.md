@@ -42,9 +42,9 @@ time. Maps use exact backend scalar costs and road IDs. Settings exposes startin
 nitro (0–3); the event seed is reserved because events use authored scripts.
 The Lab offers live/baseline resources and reports the actual structured input source.
 
-Run `build/Release/smartrace_gui_checks.exe` from the repository root for 238
+Run `build/Release/smartrace_gui_checks.exe` from the repository root for 370
 contract checks. `build/Release/smartrace_gui_smoke.exe` exercises the real
-application loop (72 checks) and refreshes actual captures in `report/screenshots/`.
+application loop (78 checks) and refreshes actual captures in `report/screenshots/`.
 It opens its own render window; it does not drive the desktop or replace manual
 keyboard/mouse acceptance. Debug and Release backend suites also pass 147 tests
 (28,554 checks). See [verification](docs/gui-verification.md), the completed

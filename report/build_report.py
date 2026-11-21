@@ -76,7 +76,7 @@ class ReportDoc(BaseDocTemplate):
         canvas.drawString(56, 811, "SMART RACING CHAMPIONSHIP  |  DESIGN AND ANALYSIS OF ALGORITHMS")
         canvas.setStrokeColor(colors.HexColor("#CCD7DF"))
         canvas.line(56, 800, 539.3, 800)
-        canvas.drawString(56, 29, "24I-3071 / 24I-3000  |  BSE-5B  |  Review edition, 17 November 2026")
+        canvas.drawString(56, 29, "24I-3071 / 24I-3000  |  BSE-5B  |  Technical report, 21 November 2026")
         canvas.drawRightString(539.3, 29, str(doc.page))
         canvas.restoreState()
 

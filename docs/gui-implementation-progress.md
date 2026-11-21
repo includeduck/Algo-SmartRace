@@ -1,116 +1,57 @@
-# Completeness implementation progress - 19 November 2026
+# Project status - 21 November 2026
 
-## Baseline and scope
+## Current baseline
 
-Work was performed in the local integration checkout `build/partner-review`,
-branch `main`, HEAD `2668111964365c784a36914c78f9bd1343d19b3f`. That folder name
-is local history, not a required evaluator path. The dirty outer checkout at
-`b5d9c18` was preserved. No reset, clean, stash, authored circuit regeneration,
-backend fix, measurement rewrite, remote commit, push or submission occurred.
+Main includes `31af129` (Wasay's completeness corrections) after the GUI commit
+`1d7c3e9`. The integrated local checkout was fast-forwarded normally. The old
+outer working tree remains preserved; no backend source, authored tracks or
+measured experiment CSVs were changed by this documentation/package update.
 
-GitHub main was inspected at `ed06ab875383d034288745b2056e808119f44283`: three
-commits ahead, affecting seven report/diagram/handoff paths only. The latest
-evening handoff and report changes were read through the connector. Both a
-fast-forward pull and ordinary archive download failed host DNS/thread access.
-The local engine is identical to inspected main, but the local report is not
-claimed to include the newer remote corrections/architecture image. Further
-report/package work must synchronize these updates first.
+## Findings
 
-## Changed files by owner
-
-All modifications are GUI-owned:
-
-- `src/app/ui/LabEventStatus.h`: pure presentation labels from recorded frame
-  counters/IDs and event insertion sequence.
-- `src/app/ui/LabRenderers.cpp`: use those labels instead of marking all future
-  rows SCHEDULED.
-- `src/app/checks/GuiChecks.cpp`: 132 additional real-trace checks over all three
-  circuits, including cancellation and full reverse seeking.
-- `src/app/checks/GuiSmoke.cpp`: capture initial, first-push and rewound event views
-  using the actual App/renderer.
-- `src/app/checks/CheckSubmission.py`: read-only ZIP CRC, required-member and local
-  Markdown-link checks; runtime-data copies; optional SHA-256 correspondence to
-  reviewed source/data/results/report/docs/dependencies and Release GUI binary.
-  This is a contents check, not a replacement for clean builds or gameplay.
-- `docs/gui-backend-handoff.md`: actionable Person 1 findings and acceptance cases.
-- `docs/gui-partner-review.md`: remove machine-specific user path, explain the
-  historical integration folder and correctly label the outdated archive.
-- `docs/gui-verification.md`: fresh observed results, screenshots and precise gates.
-- `docs/gui-implementation-progress.md`: this progress record.
-
-No Person 1 source, tests, package tool, backend report chapter or raw experiment
-data was edited. The ownership restriction in the implementation prompt is
-still in force; the backend requests were recorded locally, not sent externally.
-
-## Findings F01-F10
-
-| ID | Status | Evidence / exact remaining action |
+| Finding | Current status | Remaining acceptance |
 |---|---|---|
-| F01 | Deferred to Person 1 | Active cost-only changes still need safe-vertex replanning and increase/decrease/simultaneous-event regressions. See handoff. |
-| F02 | Deferred to Person 1 | Choose/document fuel-valid boost/exhaustion policy; fix fuel-paid movement and test mid-edge activation, expiry, rounding and cost changes. |
-| F03 | Deferred to Person 1 | Independent station/booster lifetimes and explicit collection semantics; overlap/stale-expiry/same-time regressions. |
-| F04 | Deferred to Person 1 | Validate physical fuel/checkpoint feasibility of individual and combined pickup detours; retain scalar DP/exhaustive agreement. |
-| F05 | Deferred to Person 1 | Reject malformed/nonfinite/negative road fields and invalid difficulty before routing; prevent starting invalid imported tracks. |
-| F06 | Blocked final artifact | Existing ZIP predates remote report changes and this GUI fix. Rebuild only from synchronized, accepted source and final PDF; verify source/binary/report correspondence and clean packaged game. |
-| F07 | Blocked physical acceptance | Native desktop input tooling is unavailable. Still-manual matrix remains pending, including keyboard/mouse, manual resources, save/play, resize and other DPI scales. |
-| F08 | Partly addressed; final report deferred | Portable documentation and fresh results recorded. Report/PDF final wording and full-page review await actual manual acceptance and synchronization of the newer remote chapters/diagram/exporter. No stale PDF regeneration. |
-| F09 | Checker implemented; package fix deferred | Existing CRC-valid ZIP fails required contents/link/source checks. Person 1 must include intended docs in package staging, then rerun contents checker and package -Verify. |
-| F10 | Fixed and verified | Initial NOT YET SCHEDULED, per-push QUEUED, actual CANCELLED/APPLIED; 370 GUI checks in both builds, 78 Release renderer checks, first/initial capture inspection and backward-seek evidence. |
+| F01 cost-change replanning | Backend corrected; regression suite passes | Physical live-driving observation |
+| F02 nitro fuel enforcement | Backend corrected; affordable/held/expiry tests pass | Physical nitro control and held-state usability |
+| F03 overlapping service effects | Backend corrected; overlap/collection tests pass | Physical event/service observation |
+| F04 pickup feasibility | Backend corrected; individual/combined/order tests pass | Physical resource-control acceptance |
+| F05 imported-track validation | Backend corrected; malformed/boundary/API gate tests pass | Physical error/retry acceptance |
+| F06 current archive | Candidate verification tracked in delivery log | Final acceptance/joint review before submission |
+| F07 physical GUI acceptance | Pending; no native desktop input tool available | Complete Still manual matrix in gui-verification.md |
+| F08 report and PDF | Current counts/wording updated; regenerated PDF checked as logged | Incorporate actual manual outcomes, then joint review |
+| F09 packaged docs | Package script includes docs; candidate contents checked as logged | Preserve passing link/membership checks after future changes |
+| F10 event playback labels | Corrected and verified | No outstanding implementation change |
 
-## Fresh validation
+## Verified integration results
 
-Both complete Debug and Release builds passed using Visual Studio 18 2026 and
-the documented `/m:1 /nr:false /p:TrackFileAccess=false
-/p:PreferredToolArchitecture=x64` options. Compiler tools are 14.50.35717
-(compiler 19.50); partner historical evidence records compiler 19.51.
+Debug and Release each built all targets and passed 147 backend tests / 28,554
+checks and 370 GUI contract checks. Release application smoke passed 78 checks,
+including a complete three-race championship. Host compiler: MSVC 19.50;
+Wasay's independent environment: MSVC 19.51. Original timing measurements were
+preserved; no benchmark rerun was needed for these GUI/documentation changes.
 
-| Executed verification | Exit/result |
-|---|---|
-| Debug GUI contract checks | 0; 370 checks, zero failures |
-| Release GUI contract checks | 0; 370 checks, zero failures |
-| Debug backend suite | 0; 129/129 tests, 28,480 checks, zero failures; no CRT leak report observed |
-| Release backend suite | 0; 129/129 tests, 28,480 checks, zero failures |
-| Updated Release rendering smoke in isolated data/capture folder | 0; 78 checks, zero failures, full three-race championship |
-| Existing ZIP CRC/contents/source/binary comparison | 1, expected rejection: omitted linked docs, absent newer diagrams and stale reviewed source/binary |
-| Submission-checker synthetic cases | 0; valid membership accepted; broken Markdown link and differing runtime track rejected |
-| Git whitespace check | 0 |
+Current PDF/archive, clean-folder builds, packaged-app smoke and source/hash
+checks are recorded in `gui-delivery-verification.md`. These checks do not imply
+physical mouse/keyboard acceptance. Advanced challenges remain bonus; no new
+bonus algorithm or hosting/deployment work is required.
 
-The fresh backend suite is the existing suite; it does not include the missing
-F01-F05 counterexample regressions. Ui::PostAction and screen captures do not
-count as physical input acceptance. The new label checks use actual trace
-operations as their oracle and verify the insertion-sequence assumption.
+## Work completed in this update
 
-Builds, tests and smoke produced ignored build files/temporary tracks. Smoke
-used an isolated runtime folder to preserve the original report screenshots.
-No full benchmark, report exporter, final package -Verify, full PDF-page review,
-final malware scan, human joint review or Classroom upload was performed.
+- Refresh GUI report evidence, title/footer, conclusion and reproduction text.
+- Retain Wasay's backend chapters, corrected counts, diagrams and rules.
+- Refresh actual application gallery from the isolated 21 November smoke.
+- Update handoff, current status and verification evidence.
+- Regenerate and inspect the PDF; build/check a current package candidate.
+- Commit and publish the source/report changes, with actual publication outcome
+  verified from Git history rather than assumed from this status document.
 
-## Artifacts and reproduction
+## Remaining user/team work
 
-Relative to this integration source root:
+Complete physical mouse/keyboard and 100%/150% DPI acceptance, inspect manual
+road/fuel/nitro/wait controls, wide tables, every playback control and generated
+track save/explore/play; record actual outcomes. Then perform the joint report/
+ZIP review and viva walkthrough. Repackage if any source/report changes follow.
+Classroom upload has not been performed or authorized by this update.
 
-- Current GUI executable: `build/Release/smartrace.exe`, with adjacent `data/`.
-- New smoke log: `build/verification-20261119/smoke.log`.
-- New screenshots: `build/verification-20261119/report/screenshots/`.
-- Original PDF preserved: `report/24I-3071_24I-3000_BSE-5B_Report.pdf` (historical
-  local version, not a final regenerated report).
-- Original ZIP preserved: `build/package/24I-3071_24I-3000_BSE-5B.zip` (historical,
-  5,607,556 bytes, 218 entries, valid CRC, fails final completeness checks).
-- Handoff: `docs/gui-backend-handoff.md`; physical matrix and current command
-  evidence: `docs/gui-verification.md`.
-
-Read-only archive check, after final package generation:
-
-```powershell
-python src/app/checks/CheckSubmission.py build/package/24I-3071_24I-3000_BSE-5B.zip --source-root .
-```
-
-Source changes are uncommitted and have not been pushed. Before publishing,
-synchronize main normally, retain remote report updates, review these GUI
-changes, rebuild and run appropriate checks. Never force-push or merge stale
-outer GUI files into the integrated backend.
-
-The audit's assignment coverage is unchanged except for F10: all twelve
-mandatory algorithm families, five studies and required screens already exist;
-remaining mandatory behavior/acceptance/submission gates are listed above.
-Advanced challenges remain bonus. The project is not yet verified complete.
+The project has automated implementation evidence and a candidate delivery;
+it is not yet fully accepted for submission.

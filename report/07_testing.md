@@ -84,16 +84,23 @@ A completeness review of the backend by the GUI side (19 Nov) found five more, f
 - **Track files were trusted** (F05): negative, non-numeric or out-of-range edge values reached the routing code, and a circuit that failed validation could still be raced. Both are now rejected.
 
 
-## 7.5 GUI integration review — 17 November 2026
+## 7.5 GUI integration verification - 21 November 2026
 
 GUI section by Syed Muhammad Rayyan Hassan (24I-3000).
 
 | Review check | Configuration | Observed result |
 |---|---|---|
-| Existing backend suite | Debug and Release, MSVC 19.50 x64 | 129/129 tests, 28,480 checks, zero failures in each |
-| GUI contract executable | Debug and Release | 238 checks, zero failures in each |
-| Actual application rendering smoke | Release, Windows 125% display scaling | 72 checks, zero failures |
+| Existing backend suite | Debug and Release, MSVC 19.50 x64 | 147/147 tests, 28,554 checks, zero failures in each |
+| GUI contract executable | Debug and Release | 370 checks, zero failures in each |
+| Actual application rendering smoke | Release, Windows 125% display scaling | 78 checks, zero failures |
 | Compile every target including GUI and smoke | Debug and Release | Passed |
+
+The 21 November runs used MSVC 19.50 on the GUI contributor's machine. The
+backend contributor independently reports the same 147 tests and 28,554 checks
+on MSVC 19.51; these are two distinct environments. The event-label regression
+checks initial, queued, cancelled and applied states on all three circuits and
+reconstructs every frame backwards. The rendering smoke includes initial,
+first-push and rewound event captures.
 
 The GUI contract checks cover borrowed-path copies, DNF time formatting, bounded deterministic tick accumulation, real circuit validation, same-endpoint and invalid endpoint searches, equal Dijkstra/A* costs, exact candidate road identities, scalar label sums, structured Lab input-source badges, live resource queries and seeking without advancing race time. Championship checks cover all racers, three circuits, comparator agreement, top-k prefixes and duplicate recording.
 
@@ -106,4 +113,15 @@ These are automated application checks, not physical mouse/keyboard tests. Manua
 
 ## 7.6 Submission archive verification
 
-The unchanged partner packaging script was run with -Verify from a short clean Windows extraction path. It built every Release target, passed 129 tests (28,480 checks), staged the sources/dependencies/data/results/report and binaries, created the ZIP, then extracted that archive into a fresh folder and rebuilt/passed the same tests. The first attempt in the deeply nested working path failed compiler discovery; shortening the extraction path resolved it. The host also required CMake on PATH, PATHEXT and the documented MSBuild file-tracker properties. The packaged executable has data/ next to it. Archive integrity is checked again after report regeneration; manual gameplay acceptance remains separate.
+The packaging script (`tools/package.ps1`) includes sources, pinned dependencies,
+circuit data, committed raw/summary results, report sources/PDF and linked GUI
+documentation, plus Release executables and adjacent runtime data. Packaging is
+performed from a short Windows path because deeply nested extraction paths can
+exceed MSBuild limits. The documented file-tracker properties are host-specific.
+
+The 21 November candidate is checked with `-Verify` (clean extraction, Release
+rebuild and backend tests) and `src/app/checks/CheckSubmission.py` (CRC, required
+members, local Markdown links, source/report/results bytes and packaged GUI
+binary correspondence). Command outcomes are recorded in
+`docs/gui-delivery-verification.md`; a valid CRC alone is not completeness proof.
+Physical gameplay acceptance and joint review remain separate release gates.
