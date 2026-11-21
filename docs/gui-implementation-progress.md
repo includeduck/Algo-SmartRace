@@ -47,7 +47,9 @@ bonus algorithm or hosting/deployment work is required.
 
 ## Remaining user/team work
 
-Complete physical mouse/keyboard and 100%/150% DPI acceptance, inspect manual
+Complete the antivirus check in the normal developer session (automated scan
+failed with HRESULT 0x80508023). Complete physical mouse/keyboard and 100%/150%
+DPI acceptance, inspect manual
 road/fuel/nitro/wait controls, wide tables, every playback control and generated
 track save/explore/play; record actual outcomes. Then perform the joint report/
 ZIP review and viva walkthrough. Repackage if any source/report changes follow.

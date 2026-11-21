@@ -58,7 +58,9 @@ The manifest beside the verification logs identifies exact ZIP/PDF SHA-256
 values and the source revision. It is external to the ZIP to avoid a circular
 self-hash. The ZIP is a release candidate pending the human checks above.
 
-Existing Windows Defender PowerShell scan commands were unavailable in this
-session; no malware-free certification or completed final antivirus scan is
-claimed. Complete the assignment's antivirus check in the normal developer
-session before submission, along with the joint PDF/ZIP review.
+Windows Defender PowerShell commands were unavailable. A non-remediating custom
+ZIP scan was attempted with the installed MpCmdRun.exe; it exited 2 with HRESULT
+0x80508023 before successful completion. No malware-free certification or
+completed antivirus pass is claimed. Complete the assignment's antivirus check
+in the normal developer session before submission, along with the joint PDF/ZIP
+review. The scan log is retained with the delivery evidence.

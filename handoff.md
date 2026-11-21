@@ -112,7 +112,8 @@ Reproduce `tools/package.ps1 -Verify` from a short checkout path, followed by:
 python src/app/checks/CheckSubmission.py build/package/24I-3071_24I-3000_BSE-5B.zip --source-root .
 ```
 
-Before submission: complete 4.1, incorporate observed GUI/report changes,
+Before submission: complete the antivirus check (the automated attempt failed with
+HRESULT 0x80508023), complete 4.1, incorporate observed GUI/report changes,
 regenerate the PDF and candidate if source changes, jointly review the final
 ZIP/PDF and complete the viva walkthrough. Upload to Classroom only when one
 member explicitly performs/authorizes submission; packaging is not submission.
